@@ -1,0 +1,237 @@
+{{define "index.html"}}<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kabuly</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --buy: #22c55e;
+    --sell: #ef4444;
+    --hold: #94a3b8;
+    --accent: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: .5px; }
+  .header a { color: var(--muted); text-decoration: none; font-size: .875rem; }
+  .header a:hover { color: var(--text); }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px 16px; }
+  .section-title { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 12px; }
+  .cards { display: grid; gap: 12px; margin-bottom: 28px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
+  .card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px; }
+  .card-name { font-weight: 600; font-size: 1rem; }
+  .card-ticker { color: var(--muted); font-size: .8rem; margin-left: 6px; }
+  .card-price { font-size: 1.1rem; font-weight: 700; text-align: right; }
+  .card-pct { font-size: .8rem; text-align: right; }
+  .pct-up { color: var(--buy); }
+  .pct-down { color: var(--sell); }
+  .signal-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: .78rem; font-weight: 600; }
+  .badge.buy { background: rgba(34,197,94,.15); color: var(--buy); }
+  .badge.sell { background: rgba(239,68,68,.15); color: var(--sell); }
+  .badge.hold { background: rgba(148,163,184,.15); color: var(--hold); }
+  .stars { color: #f59e0b; font-size: .85rem; }
+  .reason { font-size: .83rem; color: var(--muted); margin-bottom: 8px; line-height: 1.5; }
+  .recommend { font-size: .85rem; color: var(--buy); font-weight: 600; }
+  .card-footer { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .btn-chat { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 5px 14px; border-radius: 8px; font-size: .8rem; cursor: pointer; text-decoration: none; transition: all .15s; }
+  .btn-chat:hover { border-color: var(--accent); color: var(--accent); }
+  .insight-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 28px; }
+  .insight-headline { font-weight: 700; font-size: 1rem; margin-bottom: 8px; }
+  .insight-body { font-size: .85rem; color: var(--muted); line-height: 1.6; margin-bottom: 8px; }
+  .insight-impact { font-size: .83rem; color: var(--text); margin-bottom: 8px; }
+  .keyword-box { display: inline-block; background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.25); border-radius: 6px; padding: 4px 10px; font-size: .8rem; }
+  .keyword-label { color: var(--accent); font-weight: 600; }
+
+  /* Add stock form */
+  .add-form { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+  .add-form h3 { font-size: .85rem; color: var(--muted); margin-bottom: 14px; text-transform: uppercase; letter-spacing: .8px; }
+  .form-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label { font-size: .75rem; color: var(--muted); }
+  .form-group input, .form-group select {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 7px 10px; font-size: .85rem; min-width: 110px;
+  }
+  .form-group input:focus, .form-group select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+  .btn-add { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: .85rem; font-weight: 600; cursor: pointer; }
+  .btn-add:hover { opacity: .85; }
+  .empty { color: var(--muted); font-size: .9rem; padding: 12px 0; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <h1>📊 Kabuly</h1>
+  <a href="/profile">⚙ 投資プロファイル設定</a>
+</header>
+
+<main class="container">
+
+  <!-- Holdings -->
+  <div class="section-title">保有銘柄</div>
+  <div class="cards">
+    {{if .Holdings}}
+      {{range .Holdings}}
+      <div class="card">
+        <div class="card-top">
+          <div>
+            <span class="card-name">{{.Stock.Name}}</span>
+            <span class="card-ticker">{{.Stock.Ticker}}</span>
+          </div>
+          <div>
+            {{if .Report}}
+            <div class="card-price">{{fmtPrice .Report.Price}}</div>
+            <div class="card-pct {{if ge .Report.PriceChangePct 0.0}}pct-up{{else}}pct-down{{end}}">
+              {{if ge .Report.PriceChangePct 0.0}}+{{end}}{{printf "%.1f" .Report.PriceChangePct}}%
+            </div>
+            {{else}}
+            <div class="card-price">—</div>
+            {{end}}
+          </div>
+        </div>
+        {{if .Report}}
+        <div class="signal-row">
+          <span class="badge {{signalClass .Report.Signal}}">{{signalEmoji .Report.Signal}} {{.Report.Signal}}</span>
+          <span class="stars">{{stars .Report.Confidence}}</span>
+        </div>
+        <div class="reason">{{.Report.Reason}}</div>
+        {{if eq .Report.Signal "買い"}}
+        <div class="recommend">推奨: ¥{{fmtPrice .Report.RecommendedAmount}}（{{.Report.RecommendedShares}}株）</div>
+        {{end}}
+        {{end}}
+        <div class="card-footer">
+          <a class="btn-chat" href="/stock/{{.Stock.Ticker}}">💬 Claudeに聞く →</a>
+        </div>
+      </div>
+      {{end}}
+    {{else}}
+      <div class="empty">保有銘柄が登録されていません。</div>
+    {{end}}
+  </div>
+
+  <!-- Watchlist -->
+  <div class="section-title">ウォッチリスト</div>
+  <div class="cards">
+    {{if .Watchlist}}
+      {{range .Watchlist}}
+      <div class="card">
+        <div class="card-top">
+          <div>
+            <span class="card-name">{{.Stock.Name}}</span>
+            <span class="card-ticker">{{.Stock.Ticker}}</span>
+          </div>
+          <div>
+            {{if .Report}}
+            <div class="card-price">{{fmtPrice .Report.Price}}</div>
+            <div class="card-pct {{if ge .Report.PriceChangePct 0.0}}pct-up{{else}}pct-down{{end}}">
+              {{if ge .Report.PriceChangePct 0.0}}+{{end}}{{printf "%.1f" .Report.PriceChangePct}}%
+            </div>
+            {{else}}
+            <div class="card-price">—</div>
+            {{end}}
+          </div>
+        </div>
+        {{if .Report}}
+        <div class="signal-row">
+          <span class="badge {{signalClass .Report.Signal}}">{{signalEmoji .Report.Signal}} {{.Report.Signal}}</span>
+          <span class="stars">{{stars .Report.Confidence}}</span>
+        </div>
+        <div class="reason">{{.Report.Reason}}</div>
+        {{if eq .Report.Signal "買い"}}
+        <div class="recommend">推奨: ¥{{fmtPrice .Report.RecommendedAmount}}（{{.Report.RecommendedShares}}株）</div>
+        {{end}}
+        {{end}}
+        <div class="card-footer">
+          <a class="btn-chat" href="/stock/{{.Stock.Ticker}}">💬 Claudeに聞く →</a>
+        </div>
+      </div>
+      {{end}}
+    {{else}}
+      <div class="empty">ウォッチリストに銘柄がありません。</div>
+    {{end}}
+  </div>
+
+  <!-- Daily insight -->
+  {{if .Insight}}
+  <div class="section-title">📰 今日の教養</div>
+  <div class="insight-card" style="margin-bottom: 28px;">
+    <div class="insight-headline">{{.Insight.Headline}}</div>
+    <div class="insight-body">{{.Insight.Explanation}}</div>
+    {{if .Insight.ImpactOnHoldings}}
+    <div class="insight-impact">→ {{.Insight.ImpactOnHoldings}}</div>
+    {{end}}
+    {{if .Insight.Keyword}}
+    <div class="keyword-box">
+      <span class="keyword-label">📖 {{.Insight.Keyword}}</span>
+      {{if .Insight.KeywordExplanation}} — {{.Insight.KeywordExplanation}}{{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  <!-- Add stock form -->
+  <div class="add-form">
+    <h3>＋ 銘柄を追加</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label>ティッカー</label>
+        <input id="f-ticker" type="text" placeholder="7974 / NVDA">
+      </div>
+      <div class="form-group">
+        <label>銘柄名</label>
+        <input id="f-name" type="text" placeholder="任天堂">
+      </div>
+      <div class="form-group">
+        <label>市場</label>
+        <select id="f-market">
+          <option value="JP">JP（日本）</option>
+          <option value="US">US（米国）</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>カテゴリ</label>
+        <select id="f-category">
+          <option value="holding">保有</option>
+          <option value="watchlist">ウォッチ</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>取得単価（任意）</label>
+        <input id="f-price" type="number" placeholder="8000">
+      </div>
+      <button class="btn-add" onclick="addStock()">追加</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+async function addStock() {
+  const ticker = document.getElementById('f-ticker').value.trim();
+  const name   = document.getElementById('f-name').value.trim();
+  const market = document.getElementById('f-market').value;
+  const cat    = document.getElementById('f-category').value;
+  const price  = parseFloat(document.getElementById('f-price').value) || 0;
+
+  if (!ticker || !name) { alert('ティッカーと銘柄名は必須です'); return; }
+
+  const res = await fetch('/api/stocks', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ ticker, name, market, category: cat, purchase_price: price })
+  });
+  if (res.ok) { location.reload(); }
+  else { const e = await res.json(); alert('Error: ' + e.error); }
+}
+</script>
+</body>
+</html>{{end}}

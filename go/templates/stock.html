@@ -1,0 +1,230 @@
+{{define "stock.html"}}<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Stock.Name}} — Kabuly</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+    --text: #e2e8f0; --muted: #8892a4; --buy: #22c55e;
+    --sell: #ef4444; --hold: #94a3b8; --accent: #3b82f6;
+    --user-bubble: #1e3a5f; --ai-bubble: #1a1d27;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; }
+
+  /* Header */
+  .header { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .back-btn { color: var(--muted); text-decoration: none; font-size: 1.1rem; }
+  .header-info { flex: 1; }
+  .header-name { font-weight: 700; font-size: 1rem; }
+  .header-sub { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--muted); }
+  .badge { padding: 2px 8px; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+  .badge.buy { background: rgba(34,197,94,.15); color: var(--buy); }
+  .badge.sell { background: rgba(239,68,68,.15); color: var(--sell); }
+  .badge.hold { background: rgba(148,163,184,.15); color: var(--hold); }
+  .pct-up { color: var(--buy); } .pct-down { color: var(--sell); }
+
+  /* Stat bar */
+  .stat-bar { display: flex; gap: 20px; padding: 10px 20px; border-bottom: 1px solid var(--border); font-size: .8rem; color: var(--muted); flex-shrink: 0; overflow-x: auto; }
+  .stat { display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }
+  .stat span:first-child { font-size: .7rem; text-transform: uppercase; letter-spacing: .5px; }
+  .stat span:last-child { color: var(--text); font-weight: 600; }
+
+  /* Reset btn */
+  .reset-bar { display: flex; justify-content: flex-end; padding: 6px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .btn-reset { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 4px 12px; border-radius: 6px; font-size: .75rem; cursor: pointer; }
+  .btn-reset:hover { border-color: var(--sell); color: var(--sell); }
+
+  /* Chat area */
+  .chat-area { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { display: flex; flex-direction: column; max-width: 82%; }
+  .msg.user { align-self: flex-end; }
+  .msg.assistant { align-self: flex-start; }
+  .msg-label { font-size: .7rem; color: var(--muted); margin-bottom: 4px; }
+  .msg.user .msg-label { text-align: right; }
+  .bubble { padding: 10px 14px; border-radius: 14px; font-size: .875rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+  .msg.user .bubble { background: var(--user-bubble); border-bottom-right-radius: 4px; }
+  .msg.assistant .bubble { background: var(--ai-bubble); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+
+  /* Input bar */
+  .input-bar { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); flex-shrink: 0; background: var(--bg); }
+  .input-bar textarea {
+    flex: 1; background: var(--card); border: 1px solid var(--border); color: var(--text);
+    border-radius: 10px; padding: 10px 14px; font-size: .875rem; resize: none;
+    line-height: 1.5; font-family: inherit;
+  }
+  .input-bar textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+  .btn-send { background: var(--accent); border: none; color: #fff; border-radius: 10px; padding: 10px 18px; font-size: .875rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .btn-send:disabled { opacity: .4; cursor: default; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <a class="back-btn" href="/">←</a>
+  <div class="header-info">
+    <div class="header-name">{{.Stock.Name}} <span style="color:var(--muted);font-size:.85rem;">({{.Stock.Ticker}})</span></div>
+    <div class="header-sub">
+      {{if .Report}}
+        <span style="font-weight:700;color:var(--text);">{{fmtPrice .Report.Price}}</span>
+        <span class="{{if ge .Report.PriceChangePct 0.0}}pct-up{{else}}pct-down{{end}}">
+          {{if ge .Report.PriceChangePct 0.0}}+{{end}}{{printf "%.1f" .Report.PriceChangePct}}%
+        </span>
+        {{if .Report.Signal}}
+        <span class="badge {{signalClass .Report.Signal}}">{{signalEmoji .Report.Signal}} {{.Report.Signal}}</span>
+        {{end}}
+      {{else}}
+        <span>分析データなし</span>
+      {{end}}
+    </div>
+  </div>
+</header>
+
+{{if .Report}}
+<div class="stat-bar">
+  <div class="stat"><span>RSI</span><span>{{printf "%.1f" .Report.RSI}}</span></div>
+  <div class="stat"><span>MA20</span><span>{{fmtPrice .Report.MA20}}</span></div>
+  <div class="stat"><span>MA200</span><span>{{fmtPrice .Report.MA200}}</span></div>
+  <div class="stat"><span>損切り</span><span>{{fmtPrice .Report.StopLoss}}</span></div>
+  <div class="stat"><span>目標</span><span>{{fmtPrice .Report.TargetPrice}}</span></div>
+  <div class="stat"><span>推奨額</span><span>¥{{fmtPrice .Report.RecommendedAmount}}</span></div>
+</div>
+{{end}}
+
+<div class="reset-bar">
+  <button class="btn-reset" onclick="resetChat()">新しい会話を始める</button>
+</div>
+
+<div class="chat-area" id="chatArea">
+  {{if .Report}}
+  <div class="msg assistant">
+    <div class="msg-label">Claude</div>
+    <div class="bubble">本日の分析:
+RSI {{printf "%.1f" .Report.RSI}} / MA200上 {{fmtPrice .Report.MA200}}
+判断: {{.Report.Signal}}（確信度{{stars .Report.Confidence}}）
+{{.Report.Reason}}
+{{if .Report.RecommendedAmount}}
+推奨購入額: ¥{{fmtPrice .Report.RecommendedAmount}}（{{.Report.RecommendedShares}}株）
+損切りライン: {{fmtPrice .Report.StopLoss}}{{end}}</div>
+  </div>
+  {{end}}
+
+  {{range .History}}
+  <div class="msg {{.Role}}">
+    <div class="msg-label">{{if eq .Role "user"}}あなた{{else}}Claude{{end}}</div>
+    <div class="bubble">{{.Content}}</div>
+  </div>
+  {{end}}
+
+  <div id="streamMsg" class="msg assistant" style="display:none;">
+    <div class="msg-label">Claude</div>
+    <div class="bubble" id="streamBubble"></div>
+  </div>
+</div>
+
+<div class="input-bar">
+  <textarea id="userInput" rows="2" placeholder="何でも聞いてください...（Shift+Enter で送信）"></textarea>
+  <button class="btn-send" id="sendBtn" onclick="sendMessage()">送信 ↗</button>
+</div>
+
+<script>
+const TICKER = "{{.Stock.Ticker}}";
+
+const chatArea = document.getElementById('chatArea');
+const input    = document.getElementById('userInput');
+const sendBtn  = document.getElementById('sendBtn');
+const streamMsg   = document.getElementById('streamMsg');
+const streamBubble = document.getElementById('streamBubble');
+
+// Scroll to bottom on load
+chatArea.scrollTop = chatArea.scrollHeight;
+
+// Shift+Enter to submit
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+async function sendMessage() {
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  // Append user bubble
+  appendBubble('user', msg);
+  input.value = '';
+  sendBtn.disabled = true;
+
+  // Show streaming bubble
+  streamBubble.textContent = '';
+  streamMsg.style.display = 'flex';
+  chatArea.scrollTop = chatArea.scrollHeight;
+
+  try {
+    const resp = await fetch(`/api/chat/${TICKER}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ message: msg })
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const chunk = line.slice(6);
+        if (chunk === '[DONE]') break;
+        if (chunk.startsWith('[ERROR]')) {
+          streamBubble.textContent += '\n⚠ ' + chunk.slice(8);
+          break;
+        }
+        streamBubble.textContent += chunk;
+        chatArea.scrollTop = chatArea.scrollHeight;
+      }
+    }
+  } catch (e) {
+    streamBubble.textContent = '⚠ 通信エラー: ' + e.message;
+  }
+
+  // Move stream bubble to a permanent bubble
+  const finalText = streamBubble.textContent;
+  streamMsg.style.display = 'none';
+  appendBubble('assistant', finalText);
+  sendBtn.disabled = false;
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function appendBubble(role, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.innerHTML = `<div class="msg-label">${role === 'user' ? 'あなた' : 'Claude'}</div>
+                   <div class="bubble">${escHtml(text)}</div>`;
+  // Insert before the stream placeholder
+  chatArea.insertBefore(div, streamMsg);
+}
+
+function escHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+async function resetChat() {
+  if (!confirm('会話履歴をリセットしますか？')) return;
+  await fetch(`/api/chat/${TICKER}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ reset: true })
+  });
+  // Remove all user/assistant bubbles except the first analysis bubble
+  const msgs = chatArea.querySelectorAll('.msg');
+  msgs.forEach((m, i) => { if (i > 0) m.remove(); }); // keep first analysis card
+}
+</script>
+</body>
+</html>{{end}}

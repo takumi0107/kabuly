@@ -1,0 +1,24 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment — contains secrets, never commit
+.env
+
+# Database — generated at runtime (including SQLite WAL sidecar files)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Go build artifacts
+go/kabuly
+go/*.exe
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+*.swp
