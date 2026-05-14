@@ -1,17 +1,18 @@
-// Package handlers contains HTTP handler functions for the Kabuly web server.
+// Package handlers contains HTTP handler functions for the Kabuly API server.
 package handlers
 
 import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/kabuly/kabuly/db"
 )
 
 // ─────────────────────────────────────────────────────────
-// REST helpers
+// JSON helpers
 // ─────────────────────────────────────────────────────────
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -25,16 +26,109 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 // ─────────────────────────────────────────────────────────
+// GET /api/dashboard
+// Returns everything the dashboard page needs in one request.
+// ─────────────────────────────────────────────────────────
+
+type stockWithReport struct {
+	Stock  db.Stock        `json:"stock"`
+	Report *db.DailyReport `json:"report"`
+}
+
+type dashboardResponse struct {
+	Holdings  []stockWithReport `json:"holdings"`
+	Watchlist []stockWithReport `json:"watchlist"`
+	Insight   *db.DailyInsight  `json:"insight"`
+	Profile   *db.UserProfile   `json:"profile"`
+}
+
+func GetDashboard(database *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		stocks, err := db.GetAllStocks(database)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+
+		var holdings, watchlist []stockWithReport
+		for _, s := range stocks {
+			report, _ := db.GetLatestReport(database, s.Ticker)
+			swr := stockWithReport{Stock: s, Report: report}
+			if s.Category == "holding" {
+				holdings = append(holdings, swr)
+			} else {
+				watchlist = append(watchlist, swr)
+			}
+		}
+		if holdings == nil {
+			holdings = []stockWithReport{}
+		}
+		if watchlist == nil {
+			watchlist = []stockWithReport{}
+		}
+
+		insight, _ := db.GetLatestInsight(database)
+		profile, _ := db.GetProfile(database)
+
+		writeJSON(w, 200, dashboardResponse{
+			Holdings:  holdings,
+			Watchlist: watchlist,
+			Insight:   insight,
+			Profile:   profile,
+		})
+	}
+}
+
+// ─────────────────────────────────────────────────────────
+// GET /api/stock/{ticker}
+// Returns everything the stock chat page needs.
+// ─────────────────────────────────────────────────────────
+
+type stockDetailResponse struct {
+	Stock   *db.Stock        `json:"stock"`
+	Report  *db.DailyReport  `json:"report"`
+	History []db.ChatMessage `json:"history"`
+	Profile *db.UserProfile  `json:"profile"`
+}
+
+func GetStockDetail(database *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ticker := strings.ToUpper(r.PathValue("ticker"))
+		stock, err := db.GetStock(database, ticker)
+		if err != nil || stock == nil {
+			writeError(w, 404, "stock not found")
+			return
+		}
+		report, _ := db.GetLatestReport(database, ticker)
+		history, _ := db.GetChatHistory(database, ticker, 50)
+		profile, _ := db.GetProfile(database)
+
+		if history == nil {
+			history = []db.ChatMessage{}
+		}
+
+		writeJSON(w, 200, stockDetailResponse{
+			Stock:   stock,
+			Report:  report,
+			History: history,
+			Profile: profile,
+		})
+	}
+}
+
+// ─────────────────────────────────────────────────────────
 // GET /api/stocks
 // ─────────────────────────────────────────────────────────
 
-// GetStocks returns all registered stocks as JSON.
 func GetStocks(database *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		stocks, err := db.GetAllStocks(database)
 		if err != nil {
 			writeError(w, 500, err.Error())
 			return
+		}
+		if stocks == nil {
+			stocks = []db.Stock{}
 		}
 		writeJSON(w, 200, stocks)
 	}
@@ -44,8 +138,6 @@ func GetStocks(database *sql.DB) http.HandlerFunc {
 // POST /api/stocks
 // ─────────────────────────────────────────────────────────
 
-// AddStock registers a new stock from a JSON body.
-// Expected body: { "ticker", "name", "market", "category", "purchase_price"? }
 func AddStock(database *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {
@@ -56,14 +148,13 @@ func AddStock(database *sql.DB) http.HandlerFunc {
 			PurchasePrice float64 `json:"purchase_price"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			writeError(w, 400, "invalid JSON: "+err.Error())
+			writeError(w, 400, "invalid JSON")
 			return
 		}
 		if payload.Ticker == "" || payload.Name == "" {
 			writeError(w, 400, "ticker and name are required")
 			return
 		}
-
 		s := db.Stock{
 			Ticker:        strings.ToUpper(payload.Ticker),
 			Name:          payload.Name,
@@ -83,14 +174,9 @@ func AddStock(database *sql.DB) http.HandlerFunc {
 // DELETE /api/stocks/{ticker}
 // ─────────────────────────────────────────────────────────
 
-// RemoveStock deletes a stock and its chat history.
 func RemoveStock(database *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ticker := strings.ToUpper(r.PathValue("ticker"))
-		if ticker == "" {
-			writeError(w, 400, "ticker required")
-			return
-		}
 		if err := db.DeleteStock(database, ticker); err != nil {
 			writeError(w, 500, err.Error())
 			return
@@ -100,10 +186,24 @@ func RemoveStock(database *sql.DB) http.HandlerFunc {
 }
 
 // ─────────────────────────────────────────────────────────
+// GET /api/profile
+// ─────────────────────────────────────────────────────────
+
+func GetProfile(database *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		profile, err := db.GetProfile(database)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, profile)
+	}
+}
+
+// ─────────────────────────────────────────────────────────
 // POST /api/profile
 // ─────────────────────────────────────────────────────────
 
-// SaveProfile updates the user investment profile.
 func SaveProfile(database *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload struct {
@@ -112,10 +212,9 @@ func SaveProfile(database *sql.DB) http.HandlerFunc {
 			Style          string  `json:"style"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			writeError(w, 400, "invalid JSON: "+err.Error())
+			writeError(w, 400, "invalid JSON")
 			return
 		}
-
 		p := db.UserProfile{
 			TotalFunds:     payload.TotalFunds,
 			MaxPositionPct: payload.MaxPositionPct,
@@ -133,10 +232,29 @@ func SaveProfile(database *sql.DB) http.HandlerFunc {
 // POST /webhook/line
 // ─────────────────────────────────────────────────────────
 
-// LineWebhook handles incoming LINE webhook events.
-// Currently just acknowledges the request (full chat relay is a future feature).
 func LineWebhook(_ *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+// ─────────────────────────────────────────────────────────
+// SPA fallback — serves React index.html for non-API routes
+// ─────────────────────────────────────────────────────────
+
+// SPA returns a handler that serves static files from distDir and falls back
+// to index.html for any path that doesn't map to a file (React Router).
+func SPA(distDir string) http.Handler {
+	fileServer := http.FileServer(http.Dir(distDir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+		if _, err := os.Stat(distDir + r.URL.Path); os.IsNotExist(err) {
+			http.ServeFile(w, r, distDir+"/index.html")
+			return
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }
