@@ -208,6 +208,31 @@ func runPipelineForTicker(pipelineDir, uvPath, ticker string) {
 }
 
 // ─────────────────────────────────────────────────────────
+// POST /api/pipeline/run/{ticker}
+// Triggers a background analysis run for one ticker.
+// ─────────────────────────────────────────────────────────
+
+func RunPipeline(database *sql.DB, pipelineDir, uvPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ticker := strings.ToUpper(r.PathValue("ticker"))
+		stock, err := db.GetStock(database, ticker)
+		if err != nil || stock == nil {
+			writeError(w, 404, "stock not found")
+			return
+		}
+		pipelineMu.Lock()
+		alreadyRunning := pipelineRunning[ticker]
+		pipelineMu.Unlock()
+		if alreadyRunning {
+			writeJSON(w, 200, map[string]string{"status": "already_running"})
+			return
+		}
+		go runPipelineForTicker(pipelineDir, uvPath, ticker)
+		writeJSON(w, 200, map[string]string{"status": "started", "ticker": ticker})
+	}
+}
+
+// ─────────────────────────────────────────────────────────
 // GET /api/pipeline/status
 // Returns which tickers are currently being analyzed.
 // ─────────────────────────────────────────────────────────

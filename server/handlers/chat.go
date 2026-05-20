@@ -149,7 +149,9 @@ func streamClaude(w io.Writer, flusher http.Flusher,
 		if event.Type == "content_block_delta" && event.Delta.Type == "text_delta" {
 			chunk := event.Delta.Text
 			full.WriteString(chunk)
-			fmt.Fprintf(w, "data: %s\n\n", chunk)
+			// JSON-encode the chunk so newlines in the text survive SSE's line-based framing.
+			encoded, _ := json.Marshal(chunk)
+			fmt.Fprintf(w, "data: %s\n\n", encoded)
 			if flusher != nil {
 				flusher.Flush()
 			}

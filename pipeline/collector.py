@@ -83,8 +83,6 @@ def get_stock_data(ticker: str, market: str) -> dict:
         raise ValueError(f"No price data returned for: {yf_ticker}")
 
     close = hist["Close"]
-    high  = hist["High"]
-    low   = hist["Low"]
 
     # RSI(14)
     hist["RSI_14"] = ta.momentum.RSIIndicator(close, window=14).rsi()
@@ -103,6 +101,16 @@ def get_stock_data(ticker: str, market: str) -> dict:
     bb = ta.volatility.BollingerBands(close, window=20, window_dev=2)
     hist["BB_upper"] = bb.bollinger_hband()
     hist["BB_lower"] = bb.bollinger_lband()
+
+    # ATR(14) — Average True Range for stop-loss sizing
+    hist["ATR_14"] = ta.volatility.AverageTrueRange(
+        hist["High"], hist["Low"], hist["Close"], window=14
+    ).average_true_range()
+
+    # Volume vs 20-day average
+    vol_20d_avg = int(hist["Volume"].tail(20).mean())
+    latest_vol  = int(hist["Volume"].iloc[-1]) if pd.notna(hist["Volume"].iloc[-1]) else 0
+    volume_ratio = round(latest_vol / vol_20d_avg, 1) if vol_20d_avg > 0 else 1.0
 
     patterns = get_historical_patterns(hist)
 
@@ -130,7 +138,9 @@ def get_stock_data(ticker: str, market: str) -> dict:
         # Price
         "price": float(latest["Close"]),
         "price_change_pct": round(price_change_pct, 2),
-        "volume": int(latest["Volume"]) if pd.notna(latest["Volume"]) else 0,
+        "volume": latest_vol,
+        "volume_20d_avg": vol_20d_avg,
+        "volume_ratio": volume_ratio,
         # Technical indicators
         "rsi": safe("RSI_14"),
         "macd": safe("MACD"),
@@ -140,6 +150,7 @@ def get_stock_data(ticker: str, market: str) -> dict:
         "ma200": safe("SMA_200"),
         "bb_upper": safe("BB_upper"),
         "bb_lower": safe("BB_lower"),
+        "atr": safe("ATR_14"),
         # Company info used by Claude for chat and analysis
         "business_summary": info.get("longBusinessSummary", ""),
         "sector": info.get("sector", ""),

@@ -58,6 +58,10 @@ export const api = {
   pipelineStatus: () =>
     json<{ running: string[] }>("/api/pipeline/status"),
 
+  // Manually trigger analysis for one ticker
+  runPipeline: (ticker: string) =>
+    json<{ status: string }>(`/api/pipeline/run/${ticker}`, { method: "POST" }),
+
   // Chat reset (message sending uses SSE, not this helper)
   resetChat: (ticker: string) =>
     json<{ status: string }>(`/api/chat/${ticker}`, {

@@ -38,37 +38,61 @@ def analyze_stock(stock_data: dict, news: list[dict], profile: dict) -> dict:
     """
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-    news_lines = " / ".join([n['title'] for n in news[:4]]) or "none"
+    news_lines = "\n".join([f"- {n['title']}" for n in news[:6]]) or "- (no news)"
 
     def fmt(v, decimals=1):
         return "N/A" if v is None else f"{v:,.{decimals}f}"
 
     p = stock_data.get("patterns", {})
+    vol_ratio = stock_data.get("volume_ratio", 1.0)
+    price     = stock_data["price"]
+    atr       = stock_data.get("atr") or 0.0
+    ma20      = stock_data.get("ma20") or 0.0
+    ma50      = stock_data.get("ma50") or 0.0
+    ma200     = stock_data.get("ma200") or 0.0
+    high_52w  = p.get("high_52w") or 0.0
+
+    # Pre-compute anchor suggestions so Claude has concrete numbers to reason from.
+    suggested_stop  = round(price - 2 * atr, 0) if atr else None
+    # Nearest resistance above price: prefer MA20 > MA50 > MA200 > 52w high
+    resistances = [r for r in [ma20, ma50, ma200, high_52w] if r > price]
+    suggested_target = round(min(resistances), 0) if resistances else round(price * 1.05, 0)
 
     prompt = f"""Analyze and output a JSON investment signal. Reply with ONLY valid JSON, no markdown.
 
-Stock: {stock_data['ticker']} | {fmt(stock_data['price'])} {stock_data['currency']} ({fmt(stock_data['price_change_pct'])}% today)
-Sector: {stock_data.get('sector','N/A')} | Business: {str(stock_data.get('business_summary',''))[:300] or 'N/A'}
+Stock: {stock_data['ticker']} | {fmt(price)} {stock_data['currency']} ({fmt(stock_data['price_change_pct'])}% today)
+Sector: {stock_data.get('sector','N/A')} | Industry: {stock_data.get('industry','N/A')}
+Business: {str(stock_data.get('business_summary',''))[:800] or 'N/A'}
 
-Technicals: RSI {fmt(stock_data.get('rsi'))} | MACD {fmt(stock_data.get('macd'),2)} | BB {fmt(stock_data.get('bb_lower'),0)}–{fmt(stock_data.get('bb_upper'),0)}
-MA20 {fmt(stock_data.get('ma20'),0)} / MA50 {fmt(stock_data.get('ma50'),0)} / MA200 {fmt(stock_data.get('ma200'),0)} | P/E {fmt(stock_data.get('per'))} P/B {fmt(stock_data.get('pbr'))}
+Technicals: RSI {fmt(stock_data.get('rsi'))} | MACD {fmt(stock_data.get('macd'),2)} | ATR(14) {fmt(atr)}
+BB {fmt(stock_data.get('bb_lower'),0)}–{fmt(stock_data.get('bb_upper'),0)}
+MA20 {fmt(ma20,0)} / MA50 {fmt(ma50,0)} / MA200 {fmt(ma200,0)} | P/E {fmt(stock_data.get('per'))} P/B {fmt(stock_data.get('pbr'))}
+Volume: {fmt(stock_data.get('volume'),0)} (×{vol_ratio:.1f} of 20d avg)
 
-Historical (2y): 52w H {fmt(p.get('high_52w'),0)} ({p.get('dist_from_high_pct',0):+.1f}%) / L {fmt(p.get('low_52w'),0)} ({p.get('dist_from_low_pct',0):+.1f}%)
+Historical (2y): 52w H {fmt(high_52w,0)} ({p.get('dist_from_high_pct',0):+.1f}%) / L {fmt(p.get('low_52w'),0)} ({p.get('dist_from_low_pct',0):+.1f}%)
 Overbought days: {p.get('rsi_overbought_days',0)} | Oversold days: {p.get('rsi_oversold_days',0)} | Avg monthly: {p.get('avg_monthly_return_pct',0):+.2f}%
 Vol(30d): {p.get('volatility_30d',0):.2f}% | Above MA200: {p.get('above_ma200',False)} | 20d trend: {p.get('trend_20d',0):+.1f}%
 
-News: {news_lines}
+Recent news:
+{news_lines}
+
 Investor style: {profile['style']}
 
-{{"signal":"買い"or"様子見"or"売り","confidence":1-5,"reason":"3-4 sentences in Japanese","target_price":number,"stop_loss":number,"time_horizon":"短期(1-2週)"or"中期(1-3ヶ月)"or"長期(3ヶ月以上)","key_risks":["risk1","risk2"],"business_summary_ja":"2-3 sentences in Japanese"}}"""
+Anchors for target_price / stop_loss (adjust based on your analysis — do not use blindly):
+- Suggested stop_loss: price − 2×ATR = {fmt(suggested_stop, 0)} (tighten or widen based on support levels)
+- Suggested target_price: nearest resistance = {fmt(suggested_target, 0)} (use next key level above price)
+- stop_loss must be below current price; target_price must be above current price
+
+{{"signal":"買い"or"様子見"or"売り","confidence":1-5,"reason":"4-5 sentences in Japanese","target_price":number,"stop_loss":number,"time_horizon":"短期(1-2週)"or"中期(1-3ヶ月)"or"長期(3ヶ月以上)","key_risks":["risk1","risk2"],"business_summary_ja":"2-3 sentences in Japanese"}}"""
 
     message = client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=1500,
+        max_tokens=4000,
+        thinking={"type": "enabled", "budget_tokens": 2000},
         messages=[{"role": "user", "content": prompt}]
     )
 
-    raw_text = message.content[0].text
+    raw_text = next((b.text for b in message.content if b.type == "text"), "")
     result = _extract_json(raw_text)
 
     return result

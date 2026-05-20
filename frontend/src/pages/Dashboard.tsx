@@ -43,7 +43,7 @@ function Stars({ n }: { n: number }) {
 
 // ── Stock card ─────────────────────────────────────────────────────────────
 
-function StockCard({ swr, onRemove, analyzing }: { swr: StockWithReport; onRemove: (ticker: string) => void; analyzing?: boolean }) {
+function StockCard({ swr, onRemove, onUpdate, analyzing }: { swr: StockWithReport; onRemove: (ticker: string) => void; onUpdate: (ticker: string) => void; analyzing?: boolean }) {
   const { stock, report } = swr;
   const up = (report?.PriceChangePct ?? 0) >= 0;
   const navigate = useNavigate();
@@ -110,12 +110,21 @@ function StockCard({ swr, onRemove, analyzing }: { swr: StockWithReport; onRemov
 
       {/* Footer */}
       <div className="flex justify-between items-center px-5 py-2.5 border-t border-slate-100 bg-slate-50">
-        <button
-          onClick={() => onRemove(stock.Ticker)}
-          className="text-xs text-slate-300 hover:text-red-500 transition-colors"
-        >
-          削除
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => onRemove(stock.Ticker)}
+            className="text-xs text-slate-300 hover:text-red-500 transition-colors"
+          >
+            削除
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onUpdate(stock.Ticker); }}
+            disabled={analyzing}
+            className="text-xs text-slate-400 hover:text-blue-500 disabled:opacity-40 transition-colors"
+          >
+            {analyzing ? "分析中…" : "↻ 更新"}
+          </button>
+        </div>
         <Link
           to={`/stock/${stock.Ticker}`}
           className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600 transition-colors"
@@ -344,6 +353,15 @@ export default function Dashboard() {
     load();
   }
 
+  async function handleUpdate(ticker: string) {
+    setAnalyzingTickers((prev) => new Set([...prev, ticker]));
+    try {
+      await api.runPipeline(ticker);
+    } catch {
+      setAnalyzingTickers((prev) => { const n = new Set(prev); n.delete(ticker); return n; });
+    }
+  }
+
   if (loading)
     return <div className="flex items-center justify-center h-screen text-slate-400 text-sm">読み込み中…</div>;
 
@@ -391,7 +409,7 @@ export default function Dashboard() {
             <p className="text-slate-400 text-sm">保有銘柄が登録されていません。</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {holdings.map((swr) => <StockCard key={swr.stock.Ticker} swr={swr} onRemove={handleRemove} analyzing={analyzingTickers.has(swr.stock.Ticker)} />)}
+              {holdings.map((swr) => <StockCard key={swr.stock.Ticker} swr={swr} onRemove={handleRemove} onUpdate={handleUpdate} analyzing={analyzingTickers.has(swr.stock.Ticker)} />)}
             </div>
           )}
         </section>
@@ -402,7 +420,7 @@ export default function Dashboard() {
             <p className="text-slate-400 text-sm">ウォッチリストに銘柄がありません。</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {watchlist.map((swr) => <StockCard key={swr.stock.Ticker} swr={swr} onRemove={handleRemove} analyzing={analyzingTickers.has(swr.stock.Ticker)} />)}
+              {watchlist.map((swr) => <StockCard key={swr.stock.Ticker} swr={swr} onRemove={handleRemove} onUpdate={handleUpdate} analyzing={analyzingTickers.has(swr.stock.Ticker)} />)}
             </div>
           )}
         </section>

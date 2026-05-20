@@ -11,67 +11,7 @@ function fmt(n: number | null | undefined) {
   return n.toLocaleString("ja-JP", { maximumFractionDigits: 0 });
 }
 
-function signalColor(signal: string) {
-  if (signal === "買い") return "text-emerald-600";
-  if (signal === "売り") return "text-red-500";
-  return "text-slate-400";
-}
-
-// ── Price chart ────────────────────────────────────────────────────────────
-
-type ChartPoint = { date: string; close: number };
-
-function StockPriceChart({ ticker, market }: { ticker: string; market: string }) {
-  const [data, setData] = useState<ChartPoint[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`/api/chart/${ticker}?market=${market}`)
-      .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [ticker, market]);
-
-  if (loading) return <div className="h-48 flex items-center justify-center text-slate-400 text-sm">読み込み中…</div>;
-  if (!data.length) return <div className="h-48 flex items-center justify-center text-slate-400 text-sm">データなし</div>;
-
-  const min = Math.min(...data.map((d) => d.close));
-  const max = Math.max(...data.map((d) => d.close));
-  const pad = (max - min) * 0.05;
-  const thinned = data.filter((_, i) => i % Math.ceil(data.length / 8) === 0);
-
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
-      <ResponsiveContainer width="100%" height={200}>
-        <LineChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-          <XAxis
-            dataKey="date"
-            ticks={thinned.map((d) => d.date)}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <YAxis
-            domain={[min - pad, max + pad]}
-            tick={{ fontSize: 11, fill: "#94a3b8" }}
-            axisLine={false}
-            tickLine={false}
-            width={55}
-            tickFormatter={(v) => v.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-          />
-          <Tooltip
-            formatter={(v) => [Number(v).toLocaleString("ja-JP", { maximumFractionDigits: 2 }), "終値"]}
-            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
-          />
-          <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false} />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-// ── Shared badge / stars (mirrors Dashboard) ──────────────────────────────
+// ── Shared badge / stars ───────────────────────────────────────────────────
 
 function SignalBadge({ signal }: { signal: string }) {
   if (signal === "買い")
@@ -106,41 +46,59 @@ function Stars({ n }: { n: number }) {
   );
 }
 
-// ── Pinned analysis card ───────────────────────────────────────────────────
+// ── Price chart ────────────────────────────────────────────────────────────
 
-function AnalysisBubble({ report }: { report: NonNullable<StockDetailData["report"]> }) {
-  const rows = [
-    ["RSI",      report.RSI?.toFixed(1) ?? "—"],
-    ["MA200",    fmt(report.MA200)],
-    ["目標株価",  fmt(report.TargetPrice)],
-    ["損切りライン", fmt(report.StopLoss)],
-  ];
+type ChartPoint = { date: string; close: number };
+
+function StockPriceChart({ ticker, market }: { ticker: string; market: string }) {
+  const [data, setData] = useState<ChartPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/chart/${ticker}?market=${market}`)
+      .then((r) => r.json())
+      .then((d) => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [ticker, market]);
+
+  if (loading) return <div className="h-36 flex items-center justify-center text-slate-400 text-xs">読み込み中…</div>;
+  if (!data.length) return <div className="h-36 flex items-center justify-center text-slate-400 text-xs">データなし</div>;
+
+  const min = Math.min(...data.map((d) => d.close));
+  const max = Math.max(...data.map((d) => d.close));
+  const pad = (max - min) * 0.05;
+  const thinned = data.filter((_, i) => i % Math.ceil(data.length / 6) === 0);
+
   return (
-    <div className="px-4 py-3 rounded-2xl rounded-bl-sm text-sm bg-white border border-slate-200 shadow-sm space-y-3">
-      <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">本日の分析</p>
-
-      <table className="text-xs w-auto border-collapse">
-        <tbody>
-          {rows.map(([label, value]) => (
-            <tr key={label} className="border-b border-slate-100 last:border-0">
-              <td className="pr-6 py-1 text-slate-400">{label}</td>
-              <td className="py-1 font-semibold text-slate-700 tabular-nums">{value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <div className="flex items-center gap-2">
-        <SignalBadge signal={report.Signal} />
-        <Stars n={report.Confidence} />
-      </div>
-
-      <p className="text-slate-600 leading-relaxed">{report.Reason}</p>
-    </div>
+    <ResponsiveContainer width="100%" height={150}>
+      <LineChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+        <XAxis
+          dataKey="date"
+          ticks={thinned.map((d) => d.date)}
+          tick={{ fontSize: 10, fill: "#94a3b8" }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          domain={[min - pad, max + pad]}
+          tick={{ fontSize: 10, fill: "#94a3b8" }}
+          axisLine={false}
+          tickLine={false}
+          width={48}
+          tickFormatter={(v) => v.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+        />
+        <Tooltip
+          formatter={(v) => [Number(v).toLocaleString("ja-JP", { maximumFractionDigits: 2 }), "終値"]}
+          contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e2e8f0" }}
+        />
+        <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 
-// ── Markdown bubble ────────────────────────────────────────────────────────
+// ── Chat bubbles ───────────────────────────────────────────────────────────
 
 function MdBubble({ content, isUser }: { content: string; isUser: boolean }) {
   if (isUser) {
@@ -188,6 +146,7 @@ export default function StockChat() {
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState("");
   const [showChart, setShowChart] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -226,9 +185,11 @@ export default function StockChat() {
         buf = lines.pop()!;
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const chunk = line.slice(6);
-          if (chunk === "[DONE]") break;
-          if (chunk.startsWith("[ERROR]")) { full += "\n⚠ " + chunk.slice(8); break; }
+          const raw = line.slice(6);
+          if (raw === "[DONE]") break;
+          if (raw.startsWith("[ERROR]")) { full += "\n⚠ " + raw.slice(8); break; }
+          let chunk: string;
+          try { chunk = JSON.parse(raw); } catch { chunk = raw; }
           full += chunk;
           setStreamText(full);
         }
@@ -246,42 +207,132 @@ export default function StockChat() {
     setMessages([]);
   }
 
+  async function triggerUpdate() {
+    if (!ticker || updating) return;
+    setUpdating(true);
+    try {
+      await api.runPipeline(ticker);
+    } catch { /* ignore — server not ready yet */ }
+    const id = setInterval(async () => {
+      try {
+        const { running } = await api.pipelineStatus();
+        if (!running.includes(ticker)) {
+          clearInterval(id);
+          const fresh = await api.stockDetail(ticker);
+          setData(fresh);
+          setUpdating(false);
+        }
+      } catch { /* ignore poll errors */ }
+    }, 2500);
+  }
+
   if (!data)
     return <div className="flex items-center justify-center h-screen text-slate-400 text-sm">読み込み中…</div>;
 
   const { stock, report } = data;
   const up = (report?.PriceChangePct ?? 0) >= 0;
 
+  const stats = [
+    ["RSI",    report?.RSI != null ? report.RSI.toFixed(1) : "—"],
+    ["MA20",   fmt(report?.MA20)],
+    ["MA200",  fmt(report?.MA200)],
+    ["目標株価", fmt(report?.TargetPrice)],
+    ["損切り",  fmt(report?.StopLoss)],
+    ...(stock.PurchasePrice > 0 ? [["取得単価", fmt(stock.PurchasePrice)]] : []),
+  ] as [string, string][];
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50">
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 shadow-sm shrink-0">
-        <div className="flex items-center gap-3 px-5 py-3">
-          <Link to="/" className="text-slate-400 hover:text-slate-600 text-lg transition-colors">←</Link>
-          <div className="flex-1 min-w-0">
-            <div className="font-bold text-slate-900 truncate">
-              {stock.Name}
-              <span className="text-slate-400 text-sm font-normal ml-2">({stock.Ticker})</span>
-            </div>
-            {report && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="font-semibold text-slate-700 tabular-nums">{fmt(report.Price)}</span>
-                <span className={`font-semibold tabular-nums ${up ? "text-emerald-600" : "text-red-500"}`}>
+    <div className="flex h-screen bg-slate-50">
+
+      {/* ── Left sidebar ─────────────────────────────────────────────── */}
+      <aside className="w-72 shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
+
+        {/* Back + stock name */}
+        <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-100">
+          <Link to="/" className="text-slate-400 hover:text-slate-600 transition-colors text-lg leading-none">←</Link>
+          <div className="min-w-0">
+            <p className="font-bold text-slate-900 text-sm truncate">{stock.Name}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{stock.Ticker} · {stock.Market}</p>
+          </div>
+        </div>
+
+        {/* Price + signal */}
+        <div className="px-4 py-4 border-b border-slate-100 space-y-2">
+          {report ? (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-slate-900 tabular-nums">{fmt(report.Price)}</span>
+                <span className={`text-sm font-semibold tabular-nums ${up ? "text-emerald-600" : "text-red-500"}`}>
                   {up ? "▲" : "▼"} {Math.abs(report.PriceChangePct).toFixed(1)}%
                 </span>
-                {report.Signal && (
-                  <span className={`font-semibold text-xs ${signalColor(report.Signal)}`}>{report.Signal}</span>
-                )}
               </div>
-            )}
+              <div className="flex items-center gap-2">
+                <SignalBadge signal={report.Signal} />
+                <Stars n={report.Confidence} />
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-slate-400">データなし</p>
+          )}
+        </div>
+
+        {/* Stat grid */}
+        {report && (
+          <div className="px-4 py-4 border-b border-slate-100 grid grid-cols-2 gap-x-4 gap-y-3">
+            {stats.map(([label, value]) => (
+              <div key={label}>
+                <p className="text-xs text-slate-400">{label}</p>
+                <p className="text-sm font-semibold text-slate-700 tabular-nums">{value}</p>
+              </div>
+            ))}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+        )}
+
+        {/* Analysis reason */}
+        {report?.Reason && (
+          <div className="px-4 py-4 border-b border-slate-100">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">分析コメント</p>
+            <p className="text-xs text-slate-600 leading-relaxed">{report.Reason}</p>
+          </div>
+        )}
+
+        {/* Chart */}
+        <div>
+          <button
+            onClick={() => setShowChart((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-xs text-slate-500 hover:bg-slate-50 transition-colors border-b border-slate-100"
+          >
+            <span className="font-medium">📈 価格チャート</span>
+            <span className="text-slate-300 text-xs">{showChart ? "▲" : "▼"}</span>
+          </button>
+          {showChart && (
+            <div className="px-3 py-3">
+              <StockPriceChart ticker={stock.Ticker} market={stock.Market} />
+            </div>
+          )}
+        </div>
+
+        {/* No data fallback */}
+        {!report && (
+          <div className="px-4 py-4 text-xs text-slate-400">
+            ↻ 更新 を押して分析を実行してください。
+          </div>
+        )}
+      </aside>
+
+      {/* ── Chat panel ───────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0">
+
+        {/* Chat header */}
+        <header className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between shrink-0 shadow-sm">
+          <span className="text-sm font-medium text-slate-500">💬 AIアナリストに質問</span>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowChart((v) => !v)}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${showChart ? "bg-blue-600 text-white border-blue-600" : "text-slate-500 border-slate-200 hover:border-slate-300"}`}
+              onClick={triggerUpdate}
+              disabled={updating}
+              className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 text-slate-500 hover:text-blue-600 disabled:opacity-40 transition-colors"
             >
-              📈 チャート
+              {updating ? "更新中…" : "↻ 更新"}
             </button>
             <button
               onClick={resetChat}
@@ -290,75 +341,45 @@ export default function StockChat() {
               リセット
             </button>
           </div>
+        </header>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
+          {messages.length === 0 && !streaming && (
+            <div className="flex-1 flex items-center justify-center py-20">
+              <p className="text-sm text-slate-400">左の分析を参考に、何でも聞いてください</p>
+            </div>
+          )}
+          {messages.map((m, i) => <Bubble key={i} msg={m} />)}
+          {streaming && streamText && (
+            <div className="flex flex-col max-w-[85%] self-start">
+              <span className="text-xs text-slate-400 mb-1">AI</span>
+              <MdBubble content={streamText + "▌"} isUser={false} />
+            </div>
+          )}
+          <div ref={bottomRef} />
         </div>
 
-        {/* Stat bar */}
-        {report && (
-          <div className="flex gap-5 px-5 py-2 border-t border-slate-100 text-xs text-slate-400 overflow-x-auto">
-            {[
-              ["RSI", report.RSI.toFixed(1)],
-              ["MA20", fmt(report.MA20)],
-              ["MA200", fmt(report.MA200)],
-              ["損切り", fmt(report.StopLoss)],
-              ["目標", fmt(report.TargetPrice)],
-            ].map(([label, value]) => (
-              <div key={label} className="flex flex-col gap-0.5 whitespace-nowrap">
-                <span className="uppercase tracking-wide">{label}</span>
-                <span className="text-slate-700 font-semibold">{value}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </header>
-
-      {/* Chart (collapsible) */}
-      {showChart && (
-        <div className="px-4 pt-3 pb-1 bg-white border-b border-slate-200 shrink-0">
-          <StockPriceChart ticker={stock.Ticker} market={stock.Market} />
+        {/* Input bar */}
+        <div className="flex gap-3 px-4 py-3 border-t border-slate-200 shrink-0 bg-white shadow-sm">
+          <textarea
+            className="flex-1 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-4 py-2.5 text-sm resize-none leading-relaxed focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors"
+            rows={2}
+            placeholder="何でも聞いてください… (Shift+Enter で送信)"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); send(); }
+            }}
+          />
+          <button
+            onClick={send}
+            disabled={streaming || !input.trim()}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold text-sm px-5 rounded-xl transition-colors whitespace-nowrap"
+          >
+            送信 ↗
+          </button>
         </div>
-      )}
-
-      {/* Chat area */}
-      <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
-        {/* Pinned analysis bubble */}
-        <div className="flex flex-col max-w-[85%] self-start">
-          <span className="text-xs text-slate-400 mb-1">AI</span>
-          {report
-            ? <AnalysisBubble report={report} />
-            : <MdBubble content="まだ分析データがありません。pipeline を実行してください。" isUser={false} />}
-        </div>
-
-        {messages.map((m, i) => <Bubble key={i} msg={m} />)}
-
-        {streaming && streamText && (
-          <div className="flex flex-col max-w-[85%] self-start">
-            <span className="text-xs text-slate-400 mb-1">AI</span>
-            <MdBubble content={streamText + "▌"} isUser={false} />
-          </div>
-        )}
-
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input bar */}
-      <div className="flex gap-3 px-4 py-3 border-t border-slate-200 shrink-0 bg-white shadow-sm">
-        <textarea
-          className="flex-1 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-4 py-2.5 text-sm resize-none leading-relaxed focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors"
-          rows={2}
-          placeholder="何でも聞いてください… (Shift+Enter で送信)"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); send(); }
-          }}
-        />
-        <button
-          onClick={send}
-          disabled={streaming || !input.trim()}
-          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold text-sm px-5 rounded-xl transition-colors whitespace-nowrap"
-        >
-          送信 ↗
-        </button>
       </div>
     </div>
   );
