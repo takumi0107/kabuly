@@ -54,13 +54,17 @@ export const api = {
       `/api/search?q=${encodeURIComponent(q)}`
     ),
 
-  // Pipeline status — which tickers are currently being analyzed
+  // Pipeline status — which tickers are being analyzed + whether insight is refreshing
   pipelineStatus: () =>
-    json<{ running: string[] }>("/api/pipeline/status"),
+    json<{ running: string[]; insight_running: boolean }>("/api/pipeline/status"),
 
   // Manually trigger analysis for one ticker
   runPipeline: (ticker: string) =>
     json<{ status: string }>(`/api/pipeline/run/${ticker}`, { method: "POST" }),
+
+  // Re-fetch macro news and regenerate today's insight
+  refreshInsight: () =>
+    json<{ status: string }>("/api/insight/refresh", { method: "POST" }),
 
   // Chat reset (message sending uses SSE, not this helper)
   resetChat: (ticker: string) =>

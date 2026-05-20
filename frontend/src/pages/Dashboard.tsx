@@ -290,10 +290,24 @@ function AddStockPanel({ onAdded }: { onAdded: (ticker: string) => void }) {
 
 // ── Insight card ───────────────────────────────────────────────────────────
 
-function InsightCard({ insight }: { insight: NonNullable<DashboardData["insight"]> }) {
+function InsightCard({ insight, onRefresh, refreshing }: {
+  insight: NonNullable<DashboardData["insight"]>;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3">
-      <p className="font-semibold text-slate-800">{insight.Headline}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="font-semibold text-slate-800">{insight.Headline}</p>
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          className="shrink-0 text-xs text-slate-400 hover:text-blue-500 disabled:opacity-40 transition-colors"
+          title="今日の教養を更新"
+        >
+          {refreshing ? "更新中…" : "↻ 更新"}
+        </button>
+      </div>
       <p className="text-sm text-slate-500 leading-relaxed">{insight.Explanation}</p>
       {insight.ImpactOnHoldings && (
         <p className="text-sm text-slate-600 leading-relaxed border-l-2 border-blue-400 pl-3">{insight.ImpactOnHoldings}</p>
@@ -316,13 +330,21 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [analyzingTickers, setAnalyzingTickers] = useState<Set<string>>(new Set());
+  const [insightRefreshing, setInsightRefreshing] = useState(false);
 
   async function load() {
     try { setData(await api.dashboard()); }
     finally { setLoading(false); }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // Restore in-progress state from the server (survives navigation away and back)
+    api.pipelineStatus().then(({ running, insight_running }) => {
+      if (running.length > 0) setAnalyzingTickers(new Set(running));
+      if (insight_running) setInsightRefreshing(true);
+    }).catch(() => {});
+  }, []);
 
   // Poll pipeline status while any ticker is being analyzed.
   useEffect(() => {
@@ -351,6 +373,25 @@ export default function Dashboard() {
     if (!confirm(`${ticker} を削除しますか？`)) return;
     await api.removeStock(ticker);
     load();
+  }
+
+  async function handleInsightRefresh() {
+    if (insightRefreshing) return;
+    setInsightRefreshing(true);
+    try { await api.refreshInsight(); } catch { /* ignore */ }
+    // Poll dashboard until insight date changes or up to ~60s
+    const prev = data?.insight?.ReportDate;
+    const id = setInterval(async () => {
+      try {
+        const fresh = await api.dashboard();
+        if (fresh.insight?.ReportDate !== prev) {
+          setData(fresh);
+          setInsightRefreshing(false);
+          clearInterval(id);
+        }
+      } catch { /* ignore */ }
+    }, 3000);
+    setTimeout(() => { clearInterval(id); setInsightRefreshing(false); }, 90_000);
   }
 
   async function handleUpdate(ticker: string) {
@@ -428,7 +469,7 @@ export default function Dashboard() {
         {insight && (
           <section>
             <SectionHeader label="今日の教養" count={1} />
-            <InsightCard insight={insight} />
+            <InsightCard insight={insight} onRefresh={handleInsightRefresh} refreshing={insightRefreshing} />
           </section>
         )}
       </main>

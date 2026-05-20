@@ -250,6 +250,19 @@ def cmd_backtest(args) -> None:
     run_backtest(args.days)
 
 
+def cmd_refresh_insight(_args) -> None:
+    today = date.today().isoformat()
+    all_stocks = db.get_all_stocks()
+    holding_tickers = [s["ticker"] for s in all_stocks if s["category"] == "holding"]
+    print("[macro] fetching macro news ...")
+    macro = news_mod.get_macro_news(report_date=today)
+    db.save_news_items(macro)
+    insight = news_mod.generate_daily_insight(macro, holding_tickers, report_date=today)
+    db.upsert_daily_insight(insight)
+    print(f"[macro] insight: {insight.get('headline')}")
+    print("Done.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kabuly", description="Kabuly stock assistant CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -283,6 +296,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt = sub.add_parser("backtest", help="Simple signal backtest")
     p_bt.add_argument("--days", type=int, default=30)
 
+    # refresh-insight
+    sub.add_parser("refresh-insight", help="Re-fetch macro news and regenerate today's insight")
+
     return parser
 
 
@@ -297,6 +313,7 @@ def main() -> None:
         "list": cmd_list,
         "run": cmd_run,
         "backtest": cmd_backtest,
+        "refresh-insight": cmd_refresh_insight,
     }
     dispatch[args.command](args)
 

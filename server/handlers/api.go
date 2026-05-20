@@ -208,6 +208,51 @@ func runPipelineForTicker(pipelineDir, uvPath, ticker string) {
 }
 
 // ─────────────────────────────────────────────────────────
+// POST /api/insight/refresh
+// Re-fetches macro news and regenerates today's insight.
+// ─────────────────────────────────────────────────────────
+
+var (
+	insightMu      sync.Mutex
+	insightRunning bool
+)
+
+func RefreshInsight(_ *sql.DB, pipelineDir, uvPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		insightMu.Lock()
+		already := insightRunning
+		if !already {
+			insightRunning = true
+		}
+		insightMu.Unlock()
+
+		if already {
+			writeJSON(w, 200, map[string]string{"status": "already_running"})
+			return
+		}
+
+		go func() {
+			defer func() {
+				insightMu.Lock()
+				insightRunning = false
+				insightMu.Unlock()
+			}()
+			log.Printf("[insight] refreshing ...")
+			cmd := exec.Command(uvPath, "run", "python", "main.py", "refresh-insight")
+			cmd.Dir = pipelineDir
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("[insight] error: %v\n%s", err, out)
+			} else {
+				log.Printf("[insight] done")
+			}
+		}()
+
+		writeJSON(w, 200, map[string]string{"status": "started"})
+	}
+}
+
+// ─────────────────────────────────────────────────────────
 // POST /api/pipeline/run/{ticker}
 // Triggers a background analysis run for one ticker.
 // ─────────────────────────────────────────────────────────
@@ -245,7 +290,15 @@ func GetPipelineStatus(_ *sql.DB) http.HandlerFunc {
 			running = append(running, ticker)
 		}
 		pipelineMu.Unlock()
-		writeJSON(w, 200, map[string][]string{"running": running})
+
+		insightMu.Lock()
+		insightRunning_ := insightRunning
+		insightMu.Unlock()
+
+		writeJSON(w, 200, map[string]any{
+			"running":         running,
+			"insight_running": insightRunning_,
+		})
 	}
 }
 

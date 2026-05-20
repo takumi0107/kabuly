@@ -79,6 +79,7 @@ func main() {
 	// ── Pipeline status & manual run ────────────────────
 	mux.HandleFunc("GET /api/pipeline/status", handlers.GetPipelineStatus(database))
 	mux.HandleFunc("POST /api/pipeline/run/{ticker}", handlers.RunPipeline(database, pipelineDir, uvPath))
+	mux.HandleFunc("POST /api/insight/refresh", handlers.RefreshInsight(database, pipelineDir, uvPath))
 
 	// ── Chat (SSE streaming) ────────────────────────────
 	mux.HandleFunc("POST /api/chat/{ticker}", handlers.StockChat(database))
