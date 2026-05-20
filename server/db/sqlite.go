@@ -87,13 +87,10 @@ type ChatMessage struct {
 
 // UserProfile holds the user's investment settings.
 type UserProfile struct {
-	ID              int64
-	TotalFunds      float64
-	MaxPositionPct  float64
-	Style           string
-	RebalanceFreq   string
-	LineUserID      string
-	UpdatedAt       string
+	ID         int64
+	Style      string
+	LineUserID string
+	UpdatedAt  string
 }
 
 // ─────────────────────────────────────────────────────────
@@ -326,16 +323,13 @@ func ClearChatHistory(db *sql.DB, ticker string) error {
 // GetProfile returns the single user profile row (id=1).
 func GetProfile(db *sql.DB) (*UserProfile, error) {
 	row := db.QueryRow(
-		`SELECT id, total_funds, max_position_pct, style, COALESCE(rebalance_freq,'monthly'),
-		        COALESCE(line_user_id,''), COALESCE(updated_at,'')
+		`SELECT id, style, COALESCE(line_user_id,''), COALESCE(updated_at,'')
 		 FROM user_profile WHERE id = 1`,
 	)
 	var p UserProfile
-	err := row.Scan(&p.ID, &p.TotalFunds, &p.MaxPositionPct, &p.Style,
-		&p.RebalanceFreq, &p.LineUserID, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Style, &p.LineUserID, &p.UpdatedAt)
 	if err == sql.ErrNoRows {
-		// Return default if no row exists yet
-		return &UserProfile{ID: 1, TotalFunds: 500000, MaxPositionPct: 20, Style: "normal"}, nil
+		return &UserProfile{ID: 1, Style: "normal"}, nil
 	}
 	return &p, err
 }
@@ -343,12 +337,62 @@ func GetProfile(db *sql.DB) (*UserProfile, error) {
 // UpdateProfile overwrites the user profile (id=1).
 func UpdateProfile(db *sql.DB, p UserProfile) error {
 	_, err := db.Exec(
-		`UPDATE user_profile
-		 SET total_funds = ?, max_position_pct = ?, style = ?, updated_at = datetime('now')
-		 WHERE id = 1`,
-		p.TotalFunds, p.MaxPositionPct, p.Style,
+		`UPDATE user_profile SET style = ?, updated_at = datetime('now') WHERE id = 1`,
+		p.Style,
 	)
 	return err
+}
+
+// ─────────────────────────────────────────────────────────
+// jp_stocks (JPX listing master)
+// ─────────────────────────────────────────────────────────
+
+// JPStock is one row from the jp_stocks table.
+type JPStock struct {
+	Code    string
+	Name    string
+	Sector  string
+	Market  string
+}
+
+// SearchJPStocks searches the local JPX master by name (LIKE) or code prefix.
+// Pass a non-empty byName to search by name, or a non-empty byCode to search by code prefix.
+func SearchJPStocks(db *sql.DB, byName, byCode string) ([]JPStock, error) {
+	var query string
+	var args []any
+
+	switch {
+	case byName != "" && byCode != "":
+		query = `SELECT code, name, sector, market_segment FROM jp_stocks
+		         WHERE name LIKE ? OR code LIKE ? ORDER BY code ASC LIMIT 20`
+		args = []any{"%" + byName + "%", byCode + "%"}
+	case byName != "":
+		query = `SELECT code, name, sector, market_segment FROM jp_stocks
+		         WHERE name LIKE ? ORDER BY code ASC LIMIT 20`
+		args = []any{"%" + byName + "%"}
+	case byCode != "":
+		query = `SELECT code, name, sector, market_segment FROM jp_stocks
+		         WHERE code LIKE ? ORDER BY code ASC LIMIT 20`
+		args = []any{byCode + "%"}
+	default:
+		return nil, nil
+	}
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stocks []JPStock
+	for rows.Next() {
+		var s JPStock
+		if err := rows.Scan(&s.Code, &s.Name, &s.Sector, &s.Market); err != nil {
+			return nil, err
+		}
+		stocks = append(stocks, s)
+	}
+	return stocks, rows.Err()
 }
 
 // ─────────────────────────────────────────────────────────

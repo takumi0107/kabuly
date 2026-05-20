@@ -80,6 +80,7 @@ def run_analysis(tickers: Optional[list] = None, notify: bool = True) -> None:
             continue
 
         # 4. Persist report
+        pat = stock_data.get("patterns", {})
         report_row = {
             "ticker": ticker,
             "report_date": today,
@@ -90,8 +91,8 @@ def run_analysis(tickers: Optional[list] = None, notify: bool = True) -> None:
             "reason": result.get("reason", ""),
             "target_price": result.get("target_price"),
             "stop_loss": result.get("stop_loss"),
-            "recommended_amount": result.get("recommended_amount"),
-            "recommended_shares": result.get("recommended_shares"),
+            "recommended_amount": None,
+            "recommended_shares": None,
             "rsi": stock_data.get("rsi"),
             "ma20": stock_data.get("ma20"),
             "ma50": stock_data.get("ma50"),
@@ -99,6 +100,18 @@ def run_analysis(tickers: Optional[list] = None, notify: bool = True) -> None:
             "macd": stock_data.get("macd"),
             "business_summary_ja": result.get("business_summary_ja", ""),
             "raw_analysis": json.dumps(result, ensure_ascii=False),
+            "time_horizon": result.get("time_horizon"),
+            "key_risks": json.dumps(result.get("key_risks", []), ensure_ascii=False),
+            "high_52w": pat.get("high_52w"),
+            "low_52w": pat.get("low_52w"),
+            "dist_from_high_pct": pat.get("dist_from_high_pct"),
+            "dist_from_low_pct": pat.get("dist_from_low_pct"),
+            "rsi_overbought_days": pat.get("rsi_overbought_days"),
+            "rsi_oversold_days": pat.get("rsi_oversold_days"),
+            "avg_monthly_return_pct": pat.get("avg_monthly_return_pct"),
+            "volatility_30d": pat.get("volatility_30d"),
+            "above_ma200": 1 if pat.get("above_ma200") else 0,
+            "trend_20d": pat.get("trend_20d"),
         }
         db.upsert_daily_report(report_row)
 

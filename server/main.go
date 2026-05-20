@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/joho/godotenv"
@@ -34,10 +35,36 @@ func main() {
 
 	mux := http.NewServeMux()
 
+	pipelineDir := filepath.Join(projectRoot, "pipeline")
+
+	uvPath, err := exec.LookPath("uv")
+	if err != nil {
+		// LookPath only searches PATH; try common install locations as fallback
+		for _, candidate := range []string{
+			os.ExpandEnv("$HOME/.local/bin/uv"),
+			"/usr/local/bin/uv",
+			"/opt/homebrew/bin/uv",
+		} {
+			if _, e := os.Stat(candidate); e == nil {
+				uvPath = candidate
+				break
+			}
+		}
+	}
+	if uvPath == "" {
+		log.Println("warning: uv not found — pipeline auto-run disabled")
+	} else {
+		log.Printf("uv found at %s", uvPath)
+	}
+
 	// ── Stock APIs ──────────────────────────────────────
 	mux.HandleFunc("GET /api/stocks", handlers.GetStocks(database))
-	mux.HandleFunc("POST /api/stocks", handlers.AddStock(database))
+	mux.HandleFunc("POST /api/stocks", handlers.AddStock(database, pipelineDir, uvPath))
 	mux.HandleFunc("DELETE /api/stocks/{ticker}", handlers.RemoveStock(database))
+
+	// ── Stock search & chart (Yahoo Finance proxy) ─────
+	mux.HandleFunc("GET /api/search", handlers.SearchStocks(database))
+	mux.HandleFunc("GET /api/chart/{ticker}", handlers.GetChartData(database))
 
 	// ── Dashboard (all data in one call) ────────────────
 	mux.HandleFunc("GET /api/dashboard", handlers.GetDashboard(database))
@@ -48,6 +75,9 @@ func main() {
 	// ── Profile ─────────────────────────────────────────
 	mux.HandleFunc("GET /api/profile", handlers.GetProfile(database))
 	mux.HandleFunc("POST /api/profile", handlers.SaveProfile(database))
+
+	// ── Pipeline status ─────────────────────────────────
+	mux.HandleFunc("GET /api/pipeline/status", handlers.GetPipelineStatus(database))
 
 	// ── Chat (SSE streaming) ────────────────────────────
 	mux.HandleFunc("POST /api/chat/{ticker}", handlers.StockChat(database))

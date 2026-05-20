@@ -40,8 +40,6 @@ export const api = {
   // Profile
   getProfile: () => json<UserProfile>("/api/profile"),
   saveProfile: (payload: {
-    total_funds: number;
-    max_position_pct: number;
     style: string;
   }) =>
     json<{ status: string }>("/api/profile", {
@@ -49,6 +47,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+
+  // Stock search (Yahoo Finance proxy)
+  searchStocks: (q: string) =>
+    json<{ ticker: string; name: string; market: string; exchange: string }[]>(
+      `/api/search?q=${encodeURIComponent(q)}`
+    ),
+
+  // Pipeline status — which tickers are currently being analyzed
+  pipelineStatus: () =>
+    json<{ running: string[] }>("/api/pipeline/status"),
 
   // Chat reset (message sending uses SSE, not this helper)
   resetChat: (ticker: string) =>

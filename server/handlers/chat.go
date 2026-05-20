@@ -165,7 +165,7 @@ func buildSystemPrompt(stock db.Stock, report *db.DailyReport, profile *db.UserP
 		report = &db.DailyReport{}
 	}
 	if profile == nil {
-		profile = &db.UserProfile{TotalFunds: 500000, MaxPositionPct: 20, Style: "normal"}
+		profile = &db.UserProfile{Style: "normal"}
 	}
 	return fmt.Sprintf(`You are a stock investment assistant. Answer every question about the target stock in Japanese.
 
@@ -175,10 +175,10 @@ func buildSystemPrompt(stock db.Stock, report *db.DailyReport, profile *db.UserP
 ## Today's data
 - Price: %.0f (%+.1f%%) / RSI: %.1f / MA20: %.0f / MA200: %.0f
 - Signal: %s (confidence %d/5) — %s
-- Recommended buy: %.0f (%d shares)
+- Target price: %.0f / Stop-loss: %.0f
 
 ## User profile
-- Total funds: %.0f / Style: %s / Max per position: %.0f%%
+- Style: %s
 
 ## Guidelines
 - Explain business, revenue breakdown, and segments with concrete numbers
@@ -188,7 +188,7 @@ func buildSystemPrompt(stock db.Stock, report *db.DailyReport, profile *db.UserP
 		stock.Name, stock.Ticker, stock.Market, stock.Category, stock.PurchasePrice,
 		report.Price, report.PriceChangePct, report.RSI, report.MA20, report.MA200,
 		report.Signal, report.Confidence, report.Reason,
-		report.RecommendedAmount, report.RecommendedShares,
-		profile.TotalFunds, profile.Style, profile.MaxPositionPct,
+		report.TargetPrice, report.StopLoss,
+		profile.Style,
 	)
 }

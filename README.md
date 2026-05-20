@@ -1,12 +1,13 @@
-# Kabuly 📊
+# Kabuly
 
 Personal stock assistant that delivers a Claude-powered AI analysis report every morning via LINE and serves a full dashboard in the browser.
 
 **What it does**
 
-- Registers Japanese and US stocks (holdings + watchlist)
-- Fetches price data, RSI/MACD/MA indicators, and news every morning
-- Claude generates a buy / hold / sell signal with a concrete recommended purchase amount tailored to your investment profile
+- Registers Japanese and US stocks (holdings + watchlist) — search by name, ticker, or Japanese text
+- Fetches 2 years of price data, RSI/MACD/MA indicators, Bollinger Bands, and news every morning
+- Computes 2-year historical patterns: 52-week high/low, overbought/oversold frequency, monthly return, volatility
+- Claude generates a buy / hold / sell signal with target price and stop-loss tailored to your investment style
 - Sends a LINE notification with today's summary → one tap opens the full dashboard
 - Each stock has a dedicated chat page where you can ask Claude anything about it
 
@@ -18,16 +19,17 @@ Personal stock assistant that delivers a Claude-powered AI analysis report every
 |---|---|
 | Analysis pipeline | Python 3.13 + uv |
 | Price & indicators | yfinance + ta |
-| AI analysis & chat | Claude API (`claude-sonnet-4-20250514`) |
+| AI analysis & chat | Claude API (claude-sonnet-4-6) |
 | News | Google News RSS + NewsAPI |
 | Notifications | LINE Messaging API v3 |
-| Web server | Go 1.26 |
+| Web server | Go 1.24 |
+| Frontend | React + Vite + Tailwind CSS |
 | Database | SQLite |
 | Scheduler | APScheduler (daily 07:00 JST) |
 
 ---
 
-## Setup
+## Quick Start
 
 ### 1. Clone and configure
 
@@ -38,41 +40,67 @@ cp .env.example .env
 # Fill in your API keys (see Environment Variables below)
 ```
 
-### 2. Python — install dependencies
+### 2. Install everything
 
 ```bash
-cd python
-uv sync          # creates .venv and installs all packages
+make install
 ```
 
-### 3. Initialize the database and add stocks
+This installs Go deps, npm packages, Python packages via uv, and initializes the database.
+
+### 3. Add stocks
 
 ```bash
-uv run python main.py init-db
-
+cd pipeline
 uv run python main.py add 7974 --name "任天堂" --market JP --holding --price 8000
 uv run python main.py add NVDA --name "NVIDIA" --market US --watchlist
 ```
 
-### 4. Run a test analysis (no LINE notification)
+### 4. Start dev servers
 
 ```bash
-uv run python main.py run --no-notify
+make dev
+# Go API → http://localhost:8080
+# Vite   → http://localhost:5173
 ```
 
-### 5. Start the web dashboard
+### 5. Run a test analysis (no LINE notification)
 
 ```bash
-cd ../go
-go run .
-# → http://localhost:8080
+make pipeline
 ```
 
 ---
 
-## CLI Reference
+## Architecture
 
-All commands run from the `python/` directory with `uv run python main.py <command>`.
+The pipeline and server are decoupled — they share a single SQLite file and never call each other over HTTP.
+
+```
+pipeline/ (Python)       data/kabu.db        server/ (Go) + frontend/ (React)
+  collector.py  ─write─► daily_reports ─read─► GET /api/dashboard
+  analyzer.py   ─write─► news_items    ─read─► GET /api/stock/{ticker}
+  main.py       ─write─► daily_insights─read─► GET /api/stocks
+                          stocks (shared R/W)
+```
+
+The pipeline runs once a day (cron or `make pipeline`). The Go server runs continuously and serves the React SPA.
+
+---
+
+## Makefile Reference
+
+| Command | Description |
+|---|---|
+| `make install` | Install all dependencies and initialize the database |
+| `make dev` | Start Go API server + Vite dev server in parallel |
+| `make pipeline` | Run the analysis pipeline once (no LINE notification) |
+
+---
+
+## Pipeline CLI Reference
+
+All commands run from the `pipeline/` directory with `uv run python main.py <command>`.
 
 | Command | Description |
 |---|---|
@@ -104,7 +132,7 @@ Copy `.env.example` to `.env` and fill in:
 
 ```
 kabuly/
-├── python/
+├── pipeline/
 │   ├── main.py          # CLI entry point + APScheduler
 │   ├── collector.py     # Price data + technical indicators
 │   ├── analyzer.py      # Claude API investment signal generation
@@ -114,13 +142,17 @@ kabuly/
 │   ├── config.py        # Environment variables
 │   └── pyproject.toml   # uv dependencies
 │
-├── go/
+├── server/
 │   ├── main.go          # HTTP server + routing
 │   ├── handlers/        # Dashboard, chat, profile, API handlers
-│   ├── templates/       # index.html, stock.html, profile.html
-│   └── db/sqlite.go     # SQLite read layer
+│   └── db/              # SQLite read layer
+│
+├── frontend/
+│   ├── src/             # React components + pages
+│   └── package.json     # npm dependencies
 │
 ├── data/kabu.db         # SQLite database (git-ignored)
+├── Makefile
 └── .env                 # API keys (git-ignored)
 ```
 
@@ -130,5 +162,5 @@ kabuly/
 
 ```cron
 # Run every weekday morning at 07:00 JST
-0 7 * * 1-5 cd /path/to/kabuly/python && uv run python main.py run
+0 7 * * 1-5 cd /path/to/kabuly/pipeline && uv run python main.py run
 ```

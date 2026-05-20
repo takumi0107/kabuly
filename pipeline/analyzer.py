@@ -7,7 +7,7 @@ import json
 import re
 from typing import Optional
 import anthropic
-from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, STYLE_MULTIPLIER
+from config import ANTHROPIC_API_KEY, CLAUDE_MODEL
 
 
 def _extract_json(text: str) -> dict:
@@ -38,55 +38,29 @@ def analyze_stock(stock_data: dict, news: list[dict], profile: dict) -> dict:
     """
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-    max_amount = profile["total_funds"] * (profile["max_position_pct"] / 100)
-    multiplier = STYLE_MULTIPLIER.get(profile["style"], 0.7)
-
-    news_lines = "\n".join([f"- {n['title']}" for n in news[:5]]) or "(no news)"
+    news_lines = " / ".join([n['title'] for n in news[:4]]) or "none"
 
     def fmt(v, decimals=1):
         return "N/A" if v is None else f"{v:,.{decimals}f}"
 
-    prompt = f"""You are an expert stock analyst. Analyze the data below and produce a JSON investment signal.
+    p = stock_data.get("patterns", {})
 
-## Stock info
-- Ticker: {stock_data['ticker']}
-- Price: {fmt(stock_data['price'])} {stock_data['currency']} / Day change: {fmt(stock_data['price_change_pct'])}%
-- Sector: {stock_data.get('sector', 'N/A')} / Industry: {stock_data.get('industry', 'N/A')}
-- Business: {str(stock_data.get('business_summary', ''))[:400] or 'N/A'}
+    prompt = f"""Analyze and output a JSON investment signal. Reply with ONLY valid JSON, no markdown.
 
-## Technical indicators
-- RSI(14): {fmt(stock_data.get('rsi'))}
-- MACD: {fmt(stock_data.get('macd'), 2)} / Signal: {fmt(stock_data.get('macd_signal'), 2)}
-- MA20: {fmt(stock_data.get('ma20'), 0)} / MA50: {fmt(stock_data.get('ma50'), 0)} / MA200: {fmt(stock_data.get('ma200'), 0)}
-- BB upper: {fmt(stock_data.get('bb_upper'), 0)} / BB lower: {fmt(stock_data.get('bb_lower'), 0)}
+Stock: {stock_data['ticker']} | {fmt(stock_data['price'])} {stock_data['currency']} ({fmt(stock_data['price_change_pct'])}% today)
+Sector: {stock_data.get('sector','N/A')} | Business: {str(stock_data.get('business_summary',''))[:300] or 'N/A'}
 
-## Fundamentals
-- P/E: {fmt(stock_data.get('per'))} / P/B: {fmt(stock_data.get('pbr'))}
+Technicals: RSI {fmt(stock_data.get('rsi'))} | MACD {fmt(stock_data.get('macd'),2)} | BB {fmt(stock_data.get('bb_lower'),0)}–{fmt(stock_data.get('bb_upper'),0)}
+MA20 {fmt(stock_data.get('ma20'),0)} / MA50 {fmt(stock_data.get('ma50'),0)} / MA200 {fmt(stock_data.get('ma200'),0)} | P/E {fmt(stock_data.get('per'))} P/B {fmt(stock_data.get('pbr'))}
 
-## Recent news
-{news_lines}
+Historical (2y): 52w H {fmt(p.get('high_52w'),0)} ({p.get('dist_from_high_pct',0):+.1f}%) / L {fmt(p.get('low_52w'),0)} ({p.get('dist_from_low_pct',0):+.1f}%)
+Overbought days: {p.get('rsi_overbought_days',0)} | Oversold days: {p.get('rsi_oversold_days',0)} | Avg monthly: {p.get('avg_monthly_return_pct',0):+.2f}%
+Vol(30d): {p.get('volatility_30d',0):.2f}% | Above MA200: {p.get('above_ma200',False)} | 20d trend: {p.get('trend_20d',0):+.1f}%
 
-## User profile
-- Total funds: {profile['total_funds']:,.0f} {stock_data['currency']}
-- Style: {profile['style']}
-- Max per position: {max_amount:,.0f} {stock_data['currency']}
-- Style multiplier: {multiplier}
+News: {news_lines}
+Investor style: {profile['style']}
 
-## Instructions
-Reply with ONLY valid JSON (no markdown, no explanation):
-{{
-  "signal": "買い" or "様子見" or "売り",
-  "confidence": integer 1-5,
-  "reason": "3-4 sentence reasoning in Japanese",
-  "target_price": number,
-  "stop_loss": number,
-  "time_horizon": "短期(1-2週)" or "中期(1-3ヶ月)" or "長期(3ヶ月以上)",
-  "recommended_amount": max_amount × multiplier × confidence_adjustment as number,
-  "recommended_shares": floor(recommended_amount / current_price) as integer,
-  "reasoning_for_amount": "one sentence in Japanese explaining the amount",
-  "key_risks": ["risk1", "risk2"],
-  "business_summary_ja": "2-3 sentence summary of business and revenue segments in Japanese"
-}}"""
+{{"signal":"買い"or"様子見"or"売り","confidence":1-5,"reason":"3-4 sentences in Japanese","target_price":number,"stop_loss":number,"time_horizon":"短期(1-2週)"or"中期(1-3ヶ月)"or"長期(3ヶ月以上)","key_risks":["risk1","risk2"],"business_summary_ja":"2-3 sentences in Japanese"}}"""
 
     message = client.messages.create(
         model=CLAUDE_MODEL,
@@ -96,13 +70,6 @@ Reply with ONLY valid JSON (no markdown, no explanation):
 
     raw_text = message.content[0].text
     result = _extract_json(raw_text)
-
-    # Fallback calculation if Claude omits recommended fields
-    if not result.get("recommended_amount"):
-        adj = min(result.get("confidence", 3) / 5, 1.0)
-        result["recommended_amount"] = round(max_amount * multiplier * adj, 0)
-    if not result.get("recommended_shares") and stock_data["price"] > 0:
-        result["recommended_shares"] = int(result["recommended_amount"] // stock_data["price"])
 
     return result
 

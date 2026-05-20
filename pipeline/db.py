@@ -99,22 +99,56 @@ def init_db() -> None:
         -- User investment profile (always a single row with id=1)
         CREATE TABLE IF NOT EXISTS user_profile (
             id INTEGER PRIMARY KEY DEFAULT 1,
-            total_funds REAL NOT NULL DEFAULT 500000,
-            max_position_pct REAL DEFAULT 20.0,
-            style TEXT DEFAULT 'normal',    -- "aggressive" / "normal" / "conservative"
-            rebalance_freq TEXT DEFAULT 'monthly',
+            style TEXT DEFAULT 'normal',  -- "aggressive" / "normal" / "conservative"
             line_user_id TEXT,
             updated_at TEXT DEFAULT (datetime('now'))
         );
 
         -- Insert default profile if missing
-        INSERT OR IGNORE INTO user_profile (id, total_funds, max_position_pct, style)
-        VALUES (1, 500000, 20.0, 'normal');
+        INSERT OR IGNORE INTO user_profile (id, style)
+        VALUES (1, 'normal');
+
+        -- JPX listed stocks master (imported from TSE listing file)
+        CREATE TABLE IF NOT EXISTS jp_stocks (
+            code TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            sector TEXT,
+            market_segment TEXT,
+            imported_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_jp_stocks_name ON jp_stocks(name);
     """)
 
     conn.commit()
     conn.close()
     print(f"DB initialized: {DB_PATH}")
+    migrate_db()
+
+
+def migrate_db() -> None:
+    """Add new columns to daily_reports if they don't exist yet (safe to run repeatedly)."""
+    conn = get_conn()
+    cur = conn.cursor()
+    new_cols = [
+        ("time_horizon",           "TEXT"),
+        ("key_risks",              "TEXT"),
+        ("high_52w",               "REAL"),
+        ("low_52w",                "REAL"),
+        ("dist_from_high_pct",     "REAL"),
+        ("dist_from_low_pct",      "REAL"),
+        ("rsi_overbought_days",    "INTEGER"),
+        ("rsi_oversold_days",      "INTEGER"),
+        ("avg_monthly_return_pct", "REAL"),
+        ("volatility_30d",         "REAL"),
+        ("above_ma200",            "INTEGER"),
+        ("trend_20d",              "REAL"),
+    ]
+    existing = {row[1] for row in cur.execute("PRAGMA table_info(daily_reports)").fetchall()}
+    for col, col_type in new_cols:
+        if col not in existing:
+            cur.execute(f"ALTER TABLE daily_reports ADD COLUMN {col} {col_type}")
+    conn.commit()
+    conn.close()
 
 
 # ─────────────────────────────────────────────────────────
@@ -167,10 +201,18 @@ def upsert_daily_report(data: dict) -> None:
         """INSERT OR REPLACE INTO daily_reports
            (ticker, report_date, price, price_change_pct, signal, confidence,
             reason, target_price, stop_loss, recommended_amount, recommended_shares,
-            rsi, ma20, ma50, ma200, macd, business_summary_ja, raw_analysis)
+            rsi, ma20, ma50, ma200, macd, business_summary_ja, raw_analysis,
+            time_horizon, key_risks,
+            high_52w, low_52w, dist_from_high_pct, dist_from_low_pct,
+            rsi_overbought_days, rsi_oversold_days,
+            avg_monthly_return_pct, volatility_30d, above_ma200, trend_20d)
            VALUES (:ticker, :report_date, :price, :price_change_pct, :signal, :confidence,
                    :reason, :target_price, :stop_loss, :recommended_amount, :recommended_shares,
-                   :rsi, :ma20, :ma50, :ma200, :macd, :business_summary_ja, :raw_analysis)""",
+                   :rsi, :ma20, :ma50, :ma200, :macd, :business_summary_ja, :raw_analysis,
+                   :time_horizon, :key_risks,
+                   :high_52w, :low_52w, :dist_from_high_pct, :dist_from_low_pct,
+                   :rsi_overbought_days, :rsi_oversold_days,
+                   :avg_monthly_return_pct, :volatility_30d, :above_ma200, :trend_20d)""",
         data
     )
     conn.commit()
@@ -290,22 +332,18 @@ def get_profile() -> dict:
     conn = get_conn()
     row = conn.execute("SELECT * FROM user_profile WHERE id = 1").fetchone()
     conn.close()
-    return dict(row) if row else {
-        "id": 1, "total_funds": 500000, "max_position_pct": 20.0,
-        "style": "normal", "line_user_id": None,
-    }
+    return dict(row) if row else {"id": 1, "style": "normal", "line_user_id": None}
 
 
-def update_profile(total_funds: float, max_position_pct: float,
-                   style: str, line_user_id: Optional[str] = None) -> None:
+def update_profile(style: str, line_user_id: Optional[str] = None) -> None:
     conn = get_conn()
     conn.execute(
         """UPDATE user_profile
-           SET total_funds = ?, max_position_pct = ?, style = ?,
+           SET style = ?,
                line_user_id = COALESCE(?, line_user_id),
                updated_at = datetime('now')
            WHERE id = 1""",
-        (total_funds, max_position_pct, style, line_user_id)
+        (style, line_user_id)
     )
     conn.commit()
     conn.close()

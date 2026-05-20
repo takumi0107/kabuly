@@ -51,8 +51,6 @@ export interface ChatMessage {
 
 export interface UserProfile {
   ID: number;
-  TotalFunds: number;
-  MaxPositionPct: number;
   Style: string;
   LineUserID: string;
   UpdatedAt: string;
