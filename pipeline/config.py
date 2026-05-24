@@ -11,7 +11,8 @@ load_dotenv(_root / ".env")
 
 # ── Anthropic ──────────────────────────────────────────
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL = "claude-sonnet-4-6"
+CLAUDE_MODEL         = os.getenv("CLAUDE_ANALYSIS_MODEL", "claude-haiku-4-5-20251001")
+CLAUDE_CHAT_MODEL    = os.getenv("CLAUDE_CHAT_MODEL",     "claude-haiku-4-5-20251001")
 
 # ── LINE ───────────────────────────────────────────────
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")

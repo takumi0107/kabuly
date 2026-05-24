@@ -30,6 +30,8 @@ export interface DailyReport {
   MA200: number;
   MACD: number;
   BusinessSummaryJa: string;
+  Per: number;
+  Pbr: number;
 }
 
 export interface DailyInsight {

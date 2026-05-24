@@ -3,9 +3,11 @@ Stock price and technical indicator fetching.
 Uses yfinance for price data and ta (Technical Analysis library) for indicator calculations.
 Japanese stocks require the ".T" suffix on the ticker symbol.
 """
+import re
 import warnings
 warnings.filterwarnings("ignore")
 
+import requests
 import yfinance as yf
 import pandas as pd
 import ta
@@ -61,6 +63,43 @@ def get_historical_patterns(hist: pd.DataFrame) -> dict:
         "above_ma200":           above_ma200,
         "trend_20d":             trend_20d,
     }
+
+
+def _fetch_per_yahoo_jp(code: str) -> Optional[float]:
+    """
+    Fetch 予想PER from Yahoo Finance Japan's RSC page payload.
+    The page embeds stock data as escaped JSON inside inline scripts:
+      \\"per\\":{\\"value\\":\\"XX.XX\\",\\"suffix\\":\\"倍\\",...}
+    This matches exactly what Yahoo Finance Japan shows as PER（予想）.
+    Returns None on any failure so callers can fall back gracefully.
+    """
+    try:
+        url = f"https://finance.yahoo.co.jp/quote/{code}"
+        ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+        r = requests.get(url, headers={"User-Agent": ua}, timeout=8)
+        if r.status_code != 200:
+            return None
+        m = re.search(r'\\"per\\":\{[^}]*?\\"value\\":\\"([0-9]+\.[0-9]+)\\"[^}]*?\\"suffix\\":\\"倍\\"', r.text)
+        if m:
+            val = float(m.group(1))
+            return val if val > 0 else None
+        return None
+    except Exception:
+        return None
+
+
+def _calc_per(price: float, info: dict, market: str = "", ticker_code: str = "") -> Optional[float]:
+    """
+    Return PER matching Yahoo Finance Japan's PER（会社予想）.
+    For JP stocks: scrape the legacy Yahoo Finance Japan page (most accurate).
+    For US stocks: use yfinance's pre-calculated forwardPE (analyst consensus).
+    Falls back to trailingPE if nothing else is available.
+    """
+    if market.upper() == "JP" and ticker_code:
+        yj_per = _fetch_per_yahoo_jp(ticker_code)
+        if yj_per is not None:
+            return yj_per
+    return info.get("forwardPE") or info.get("trailingPE")
 
 
 def get_stock_data(ticker: str, market: str) -> dict:
@@ -155,7 +194,10 @@ def get_stock_data(ticker: str, market: str) -> dict:
         "business_summary": info.get("longBusinessSummary", ""),
         "sector": info.get("sector", ""),
         "industry": info.get("industry", ""),
-        "per": info.get("trailingPE"),
+        # 会社予想PER: calculate from current price / forwardEps (company guidance EPS).
+        # This matches what Yahoo Finance Japan shows as PER（会社予想）.
+        # Fall back to forwardPE (analyst consensus) then trailingPE (実績) if unavailable.
+        "per": _calc_per(float(latest["Close"]), info, market, ticker),
         "pbr": info.get("priceToBook"),
         "market_cap": info.get("marketCap"),
         "currency": info.get("currency", "JPY" if market.upper() == "JP" else "USD"),

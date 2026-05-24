@@ -51,6 +51,8 @@ type DailyReport struct {
 	BusinessSummaryJa  string
 	RawAnalysis        string
 	CreatedAt          string
+	Per                float64
+	Pbr                float64
 }
 
 // NewsItem stores a single news article linked to a stock (or macro).
@@ -192,7 +194,7 @@ func GetLatestReport(db *sql.DB, ticker string) (*DailyReport, error) {
 		        COALESCE(recommended_amount,0), COALESCE(recommended_shares,0),
 		        COALESCE(rsi,0), COALESCE(ma20,0), COALESCE(ma50,0), COALESCE(ma200,0),
 		        COALESCE(macd,0), COALESCE(business_summary_ja,''), COALESCE(raw_analysis,''),
-		        created_at
+		        created_at, COALESCE(per,0), COALESCE(pbr,0)
 		 FROM daily_reports WHERE ticker = ?
 		 ORDER BY report_date DESC LIMIT 1`,
 		ticker,
@@ -202,7 +204,7 @@ func GetLatestReport(db *sql.DB, ticker string) (*DailyReport, error) {
 		&r.Signal, &r.Confidence, &r.Reason, &r.TargetPrice, &r.StopLoss,
 		&r.RecommendedAmount, &r.RecommendedShares,
 		&r.RSI, &r.MA20, &r.MA50, &r.MA200, &r.MACD,
-		&r.BusinessSummaryJa, &r.RawAnalysis, &r.CreatedAt)
+		&r.BusinessSummaryJa, &r.RawAnalysis, &r.CreatedAt, &r.Per, &r.Pbr)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -219,7 +221,7 @@ func GetTodayReports(db *sql.DB) ([]DailyReport, error) {
 		        COALESCE(recommended_amount,0), COALESCE(recommended_shares,0),
 		        COALESCE(rsi,0), COALESCE(ma20,0), COALESCE(ma50,0), COALESCE(ma200,0),
 		        COALESCE(macd,0), COALESCE(business_summary_ja,''), COALESCE(raw_analysis,''),
-		        created_at
+		        created_at, COALESCE(per,0), COALESCE(pbr,0)
 		 FROM daily_reports WHERE report_date = ?`,
 		today,
 	)
@@ -238,7 +240,7 @@ func scanReports(rows *sql.Rows) ([]DailyReport, error) {
 			&r.Signal, &r.Confidence, &r.Reason, &r.TargetPrice, &r.StopLoss,
 			&r.RecommendedAmount, &r.RecommendedShares,
 			&r.RSI, &r.MA20, &r.MA50, &r.MA200, &r.MACD,
-			&r.BusinessSummaryJa, &r.RawAnalysis, &r.CreatedAt); err != nil {
+			&r.BusinessSummaryJa, &r.RawAnalysis, &r.CreatedAt, &r.Per, &r.Pbr); err != nil {
 			return nil, err
 		}
 		reports = append(reports, r)

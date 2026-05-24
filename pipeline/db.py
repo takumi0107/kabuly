@@ -142,6 +142,8 @@ def migrate_db() -> None:
         ("volatility_30d",         "REAL"),
         ("above_ma200",            "INTEGER"),
         ("trend_20d",              "REAL"),
+        ("per",                    "REAL"),
+        ("pbr",                    "REAL"),
     ]
     existing = {row[1] for row in cur.execute("PRAGMA table_info(daily_reports)").fetchall()}
     for col, col_type in new_cols:
@@ -205,14 +207,16 @@ def upsert_daily_report(data: dict) -> None:
             time_horizon, key_risks,
             high_52w, low_52w, dist_from_high_pct, dist_from_low_pct,
             rsi_overbought_days, rsi_oversold_days,
-            avg_monthly_return_pct, volatility_30d, above_ma200, trend_20d)
+            avg_monthly_return_pct, volatility_30d, above_ma200, trend_20d,
+            per, pbr)
            VALUES (:ticker, :report_date, :price, :price_change_pct, :signal, :confidence,
                    :reason, :target_price, :stop_loss, :recommended_amount, :recommended_shares,
                    :rsi, :ma20, :ma50, :ma200, :macd, :business_summary_ja, :raw_analysis,
                    :time_horizon, :key_risks,
                    :high_52w, :low_52w, :dist_from_high_pct, :dist_from_low_pct,
                    :rsi_overbought_days, :rsi_oversold_days,
-                   :avg_monthly_return_pct, :volatility_30d, :above_ma200, :trend_20d)""",
+                   :avg_monthly_return_pct, :volatility_30d, :above_ma200, :trend_20d,
+                   :per, :pbr)""",
         data
     )
     conn.commit()

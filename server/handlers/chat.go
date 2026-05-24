@@ -95,8 +95,12 @@ func StockChat(database *sql.DB) http.HandlerFunc {
 func streamClaude(w io.Writer, flusher http.Flusher,
 	system string, messages []chatMsg) (string, error) {
 
+	chatModel := os.Getenv("CLAUDE_CHAT_MODEL")
+	if chatModel == "" {
+		chatModel = "claude-haiku-4-5-20251001"
+	}
 	reqBody := map[string]any{
-		"model":      "claude-sonnet-4-6",
+		"model":      chatModel,
 		"max_tokens": 1500,
 		"system":     system,
 		"stream":     true,
@@ -169,20 +173,32 @@ func buildSystemPrompt(stock db.Stock, report *db.DailyReport, profile *db.UserP
 	if profile == nil {
 		profile = &db.UserProfile{Style: "normal"}
 	}
+	perStr := "—"
+	if report.Per > 0 {
+		perStr = fmt.Sprintf("%.1f倍", report.Per)
+	}
+	pbrStr := "—"
+	if report.Pbr > 0 {
+		pbrStr = fmt.Sprintf("%.2f倍", report.Pbr)
+	}
+
 	return fmt.Sprintf(`You are a stock investment assistant. Answer every question about the target stock in Japanese.
 
 ## Target stock
 - Name: %s (%s) / Market: %s / Category: %s / Acquisition cost: %.0f
 
-## Today's data
+## Today's data (from our pipeline — use these numbers as ground truth, do NOT recalculate)
 - Price: %.0f (%+.1f%%) / RSI: %.1f / MA20: %.0f / MA200: %.0f
 - Signal: %s (confidence %d/5) — %s
 - Target price: %.0f / Stop-loss: %.0f
+- 予想PER (forward/会社予想, same as Yahoo Finance JP): %s / PBR: %s
 
 ## User profile
 - Style: %s
 
 ## Guidelines
+- Always use the data above when answering questions about price, PER, PBR, or technical indicators
+- Never calculate or guess these values yourself — they are already provided above
 - Explain business, revenue breakdown, and segments with concrete numbers
 - Compare with competitors when relevant
 - Give specific buy timing and stop-loss levels
@@ -191,6 +207,7 @@ func buildSystemPrompt(stock db.Stock, report *db.DailyReport, profile *db.UserP
 		report.Price, report.PriceChangePct, report.RSI, report.MA20, report.MA200,
 		report.Signal, report.Confidence, report.Reason,
 		report.TargetPrice, report.StopLoss,
+		perStr, pbrStr,
 		profile.Style,
 	)
 }

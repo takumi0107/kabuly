@@ -66,6 +66,10 @@ export const api = {
   refreshInsight: () =>
     json<{ status: string }>("/api/insight/refresh", { method: "POST" }),
 
+  // Trigger analysis for all registered stocks at once
+  runAllPipeline: () =>
+    json<{ status: string; tickers: string[] }>("/api/pipeline/run/all", { method: "POST" }),
+
   // Chat reset (message sending uses SSE, not this helper)
   resetChat: (ticker: string) =>
     json<{ status: string }>(`/api/chat/${ticker}`, {

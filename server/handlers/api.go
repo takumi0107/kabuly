@@ -184,27 +184,12 @@ func AddStock(database *sql.DB, pipelineDir, uvPath string) http.HandlerFunc {
 	}
 }
 
-// runPipelineForTicker runs the Python pipeline for a single ticker asynchronously.
+// runPipelineForTicker sets the running flag and launches the pipeline goroutine.
 func runPipelineForTicker(pipelineDir, uvPath, ticker string) {
 	pipelineMu.Lock()
 	pipelineRunning[ticker] = true
 	pipelineMu.Unlock()
-
-	defer func() {
-		pipelineMu.Lock()
-		delete(pipelineRunning, ticker)
-		pipelineMu.Unlock()
-	}()
-
-	log.Printf("[pipeline] starting analysis for %s", ticker)
-	cmd := exec.Command(uvPath, "run", "python", "main.py", "run", "--ticker", ticker, "--no-notify")
-	cmd.Dir = pipelineDir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("[pipeline] %s error: %v\n%s", ticker, err, out)
-	} else {
-		log.Printf("[pipeline] %s done", ticker)
-	}
+	go runPipelineForTickerAsync(pipelineDir, uvPath, ticker)
 }
 
 // ─────────────────────────────────────────────────────────
@@ -274,6 +259,55 @@ func RunPipeline(database *sql.DB, pipelineDir, uvPath string) http.HandlerFunc 
 		}
 		go runPipelineForTicker(pipelineDir, uvPath, ticker)
 		writeJSON(w, 200, map[string]string{"status": "started", "ticker": ticker})
+	}
+}
+
+// ─────────────────────────────────────────────────────────
+// POST /api/pipeline/run/all
+// Triggers background analysis for every registered stock.
+// ─────────────────────────────────────────────────────────
+
+func RunAllPipeline(database *sql.DB, pipelineDir, uvPath string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		stocks, err := db.GetAllStocks(database)
+		if err != nil || len(stocks) == 0 {
+			writeJSON(w, 200, map[string]any{"status": "no stocks", "tickers": []string{}})
+			return
+		}
+		pipelineMu.Lock()
+		var queued []string
+		for _, s := range stocks {
+			if !pipelineRunning[s.Ticker] {
+				pipelineRunning[s.Ticker] = true
+				queued = append(queued, s.Ticker)
+			}
+		}
+		pipelineMu.Unlock()
+
+		for _, ticker := range queued {
+			go runPipelineForTickerAsync(pipelineDir, uvPath, ticker)
+		}
+
+		writeJSON(w, 200, map[string]any{"status": "started", "tickers": queued})
+	}
+}
+
+// runPipelineForTickerAsync runs the pipeline without setting the running flag
+// (the caller already set it under the lock).
+func runPipelineForTickerAsync(pipelineDir, uvPath, ticker string) {
+	defer func() {
+		pipelineMu.Lock()
+		delete(pipelineRunning, ticker)
+		pipelineMu.Unlock()
+	}()
+	log.Printf("[pipeline] starting analysis for %s", ticker)
+	cmd := exec.Command(uvPath, "run", "python", "main.py", "run", "--ticker", ticker, "--no-notify")
+	cmd.Dir = pipelineDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[pipeline] %s error: %v\n%s", ticker, err, out)
+	} else {
+		log.Printf("[pipeline] %s done", ticker)
 	}
 }
 
@@ -567,7 +601,7 @@ func LineWebhook(_ *sql.DB) http.HandlerFunc {
 func SPA(distDir string) http.Handler {
 	fileServer := http.FileServer(http.Dir(distDir))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/auth/") {
 			http.NotFound(w, r)
 			return
 		}

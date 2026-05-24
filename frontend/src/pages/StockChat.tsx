@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -9,6 +10,11 @@ import type { ChatMessage, StockDetailData } from "../types";
 function fmt(n: number | null | undefined) {
   if (n == null || n === 0) return "—";
   return n.toLocaleString("ja-JP", { maximumFractionDigits: 0 });
+}
+
+function fmtPrice(n: number | null | undefined) {
+  if (n == null || n === 0) return "—";
+  return n.toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
 // ── Shared badge / stars ───────────────────────────────────────────────────
@@ -42,6 +48,67 @@ function Stars({ n }: { n: number }) {
       {Array.from({ length: 5 }, (_, i) => (
         <span key={i} className={i < n ? "text-amber-400" : "text-slate-200"}>★</span>
       ))}
+    </span>
+  );
+}
+
+// ── Tooltip ────────────────────────────────────────────────────────────────
+
+function StatTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const [tipRect, setTipRect] = useState<DOMRect | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  function capture() {
+    if (btnRef.current) setTipRect(btnRef.current.getBoundingClientRect());
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (btnRef.current && !btnRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const TIP_W = 208; // w-52
+  const MARGIN = 8;
+  // Center the tooltip on the button, then clamp so it never exits the viewport
+  const btnCenterX = tipRect ? (tipRect.left + tipRect.right) / 2 : 0;
+  const left = tipRect
+    ? Math.max(MARGIN, Math.min(btnCenterX - TIP_W / 2, window.innerWidth - TIP_W - MARGIN))
+    : 0;
+  // Caret tracks the actual button center regardless of clamping
+  const caretX = tipRect ? Math.min(Math.max(btnCenterX - left - 4, 8), TIP_W - 16) : TIP_W / 2;
+  const top = tipRect ? tipRect.top : 0;
+
+  return (
+    <span className="relative inline-flex items-center">
+      <button
+        ref={btnRef}
+        type="button"
+        className="ml-0.5 text-slate-300 hover:text-blue-400 text-xs leading-none cursor-help transition-colors"
+        onMouseEnter={() => { capture(); setOpen(true); }}
+        onMouseLeave={() => setOpen(false)}
+        onClick={() => { capture(); setOpen((v) => !v); }}
+        aria-label="説明を表示"
+      >
+        ⓘ
+      </button>
+      {open && tipRect && createPortal(
+        <span
+          className="fixed w-52 bg-slate-800 text-white text-xs rounded-xl px-3 py-2.5 z-[9999] shadow-xl leading-relaxed pointer-events-none whitespace-normal"
+          style={{ top, left, transform: "translateY(calc(-100% - 8px))" }}
+        >
+          {text}
+          <span
+            className="absolute top-full border-4 border-transparent border-t-slate-800"
+            style={{ left: caretX }}
+          />
+        </span>,
+        document.body
+      )}
     </span>
   );
 }
@@ -166,6 +233,7 @@ export default function StockChat() {
     setInput("");
     setStreaming(true);
     setStreamText("");
+    setMobileTab("chat"); // switch to chat view on mobile when sending
 
     try {
       const res = await fetch(`/api/chat/${ticker}`, {
@@ -226,105 +294,169 @@ export default function StockChat() {
     }, 2500);
   }
 
+  const [mobileTab, setMobileTab] = useState<"analysis" | "chat">("analysis");
+
   if (!data)
     return <div className="flex items-center justify-center h-screen text-slate-400 text-sm">読み込み中…</div>;
 
   const { stock, report } = data;
   const up = (report?.PriceChangePct ?? 0) >= 0;
 
-  const stats = [
-    ["RSI",    report?.RSI != null ? report.RSI.toFixed(1) : "—"],
-    ["MA20",   fmt(report?.MA20)],
-    ["MA200",  fmt(report?.MA200)],
-    ["目標株価", fmt(report?.TargetPrice)],
-    ["損切り",  fmt(report?.StopLoss)],
-    ...(stock.PurchasePrice > 0 ? [["取得単価", fmt(stock.PurchasePrice)]] : []),
-  ] as [string, string][];
+  const stats: [string, string, string][] = [
+    ["RSI",    report?.RSI != null ? report.RSI.toFixed(1) : "—",   "相対力指数。30以下で売られすぎ、70以上で買われすぎ"],
+    ["MA20",   fmt(report?.MA20),   "20日移動平均線。短期トレンドの方向性を示す"],
+    ["MA200",  fmt(report?.MA200),  "200日移動平均線。長期トレンドの基準線・支持線"],
+    ["目標株価", fmtPrice(report?.TargetPrice), "AIが算出した上値目標価格"],
+    ["損切り",  fmtPrice(report?.StopLoss),    "リスク管理のための撤退価格"],
+    ...(stock.PurchasePrice > 0 ? [["取得単価", fmt(stock.PurchasePrice), "ポートフォリオ登録時の取得単価"] as [string, string, string]] : []),
+    ...((report?.Per ?? 0) > 0 ? [["PER", report!.Per.toFixed(1) + "x", "株価収益率（予想）。Yahoo!ファイナンス掲載値と同一ソースから取得"] as [string, string, string]] : []),
+    ...((report?.Pbr ?? 0) > 0 ? [["PBR", report!.Pbr.toFixed(2) + "x", "株価純資産倍率（P/B）。1倍以下は解散価値以下"] as [string, string, string]] : []),
+  ];
+
+  // Sidebar content — shared between desktop aside and mobile analysis tab
+  const analysisPanelContent = (
+    <>
+      {/* Price + signal */}
+      <div className="px-4 py-4 border-b border-slate-100 space-y-2">
+        {report ? (
+          <>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-slate-900 tabular-nums">{fmt(report.Price)}</span>
+              <span className={`text-sm font-semibold tabular-nums ${up ? "text-emerald-600" : "text-red-500"}`}>
+                {up ? "▲" : "▼"} {Math.abs(report.PriceChangePct).toFixed(1)}%
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <SignalBadge signal={report.Signal} />
+              <Stars n={report.Confidence} />
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-slate-400">データなし</p>
+        )}
+      </div>
+
+      {/* Stat grid */}
+      {report && (
+        <div className="px-4 py-4 border-b border-slate-100 grid grid-cols-2 gap-x-4 gap-y-3">
+          {stats.map(([label, value, tip]) => (
+            <div key={label}>
+              <p className="text-xs text-slate-400 flex items-center">
+                {label}
+                <StatTip text={tip} />
+              </p>
+              <p className="text-base font-semibold text-slate-700 tabular-nums">{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Analysis reason */}
+      {report?.Reason && (
+        <div className="px-4 py-4 border-b border-slate-100">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">分析コメント</p>
+          <p className="text-sm text-slate-600 leading-relaxed">{report.Reason}</p>
+        </div>
+      )}
+
+      {/* Chart */}
+      <div>
+        <button
+          onClick={() => setShowChart((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 text-xs text-slate-500 hover:bg-slate-50 transition-colors border-b border-slate-100"
+        >
+          <span className="font-medium">📈 価格チャート</span>
+          <span className="text-slate-300 text-xs">{showChart ? "▲" : "▼"}</span>
+        </button>
+        {showChart && (
+          <div className="px-3 py-3">
+            <StockPriceChart ticker={stock.Ticker} market={stock.Market} />
+          </div>
+        )}
+      </div>
+
+      {!report && (
+        <div className="px-4 py-4 text-xs text-slate-400">
+          ↻ 更新 を押して分析を実行してください。
+        </div>
+      )}
+    </>
+  );
+
+  // ── Shared top bar (mobile only) ─────────────────────────────────────────
+  const mobileTopBar = (
+    <div className="md:hidden bg-white border-b border-slate-200 shrink-0">
+      {/* Stock name row */}
+      <div className="flex items-center gap-3 px-4 py-3">
+        <Link to="/" className="text-slate-400 text-xl leading-none shrink-0">←</Link>
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-slate-900 text-sm truncate">{stock.Name}</p>
+          <p className="text-xs text-slate-400">{stock.Ticker} · {stock.Market}</p>
+        </div>
+        <button
+          onClick={triggerUpdate}
+          disabled={updating}
+          className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 disabled:opacity-40 transition-colors"
+        >
+          {updating ? "更新中…" : "↻ 更新"}
+        </button>
+        <button
+          onClick={resetChat}
+          className="shrink-0 text-xs text-slate-400 hover:text-red-500 transition-colors"
+        >
+          リセット
+        </button>
+      </div>
+      {/* Tab bar */}
+      <div className="flex">
+        {(["analysis", "chat"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setMobileTab(tab)}
+            className={`flex-1 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              mobileTab === tab
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            {tab === "analysis" ? "📊 分析" : "💬 チャット"}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex flex-col md:flex-row h-[100dvh] bg-slate-50">
 
-      {/* ── Left sidebar ─────────────────────────────────────────────── */}
-      <aside className="w-72 shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
+      {/* Mobile top bar */}
+      {mobileTopBar}
 
-        {/* Back + stock name */}
-        <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-100">
+      {/* ── Analysis panel ───────────────────────────────────────────── */}
+      {/* Mobile: full-width when analysis tab active; Desktop: fixed-width sidebar */}
+      <aside className={`
+        ${mobileTab === "analysis" ? "flex" : "hidden"} md:flex
+        flex-col w-full md:w-96 shrink-0 bg-white md:border-r border-slate-200 overflow-y-auto
+      `}>
+        {/* Desktop-only header */}
+        <div className="hidden md:flex items-center gap-3 px-4 py-4 border-b border-slate-100">
           <Link to="/" className="text-slate-400 hover:text-slate-600 transition-colors text-lg leading-none">←</Link>
           <div className="min-w-0">
             <p className="font-bold text-slate-900 text-sm truncate">{stock.Name}</p>
             <p className="text-xs text-slate-400 mt-0.5">{stock.Ticker} · {stock.Market}</p>
           </div>
         </div>
-
-        {/* Price + signal */}
-        <div className="px-4 py-4 border-b border-slate-100 space-y-2">
-          {report ? (
-            <>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-slate-900 tabular-nums">{fmt(report.Price)}</span>
-                <span className={`text-sm font-semibold tabular-nums ${up ? "text-emerald-600" : "text-red-500"}`}>
-                  {up ? "▲" : "▼"} {Math.abs(report.PriceChangePct).toFixed(1)}%
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <SignalBadge signal={report.Signal} />
-                <Stars n={report.Confidence} />
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-slate-400">データなし</p>
-          )}
-        </div>
-
-        {/* Stat grid */}
-        {report && (
-          <div className="px-4 py-4 border-b border-slate-100 grid grid-cols-2 gap-x-4 gap-y-3">
-            {stats.map(([label, value]) => (
-              <div key={label}>
-                <p className="text-xs text-slate-400">{label}</p>
-                <p className="text-sm font-semibold text-slate-700 tabular-nums">{value}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Analysis reason */}
-        {report?.Reason && (
-          <div className="px-4 py-4 border-b border-slate-100">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">分析コメント</p>
-            <p className="text-xs text-slate-600 leading-relaxed">{report.Reason}</p>
-          </div>
-        )}
-
-        {/* Chart */}
-        <div>
-          <button
-            onClick={() => setShowChart((v) => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-xs text-slate-500 hover:bg-slate-50 transition-colors border-b border-slate-100"
-          >
-            <span className="font-medium">📈 価格チャート</span>
-            <span className="text-slate-300 text-xs">{showChart ? "▲" : "▼"}</span>
-          </button>
-          {showChart && (
-            <div className="px-3 py-3">
-              <StockPriceChart ticker={stock.Ticker} market={stock.Market} />
-            </div>
-          )}
-        </div>
-
-        {/* No data fallback */}
-        {!report && (
-          <div className="px-4 py-4 text-xs text-slate-400">
-            ↻ 更新 を押して分析を実行してください。
-          </div>
-        )}
+        {analysisPanelContent}
       </aside>
 
       {/* ── Chat panel ───────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
-
-        {/* Chat header */}
-        <header className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between shrink-0 shadow-sm">
+      {/* Mobile: full-width when chat tab active; Desktop: always visible flex-1 */}
+      <div className={`
+        ${mobileTab === "chat" ? "flex" : "hidden"} md:flex
+        flex-1 flex-col min-w-0
+      `}>
+        {/* Desktop-only chat header */}
+        <header className="hidden md:flex bg-white border-b border-slate-200 px-5 py-3 items-center justify-between shrink-0 shadow-sm">
           <span className="text-sm font-medium text-slate-500">💬 AIアナリストに質問</span>
           <div className="flex items-center gap-2">
             <button
@@ -344,10 +476,10 @@ export default function StockChat() {
         </header>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
+        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
           {messages.length === 0 && !streaming && (
             <div className="flex-1 flex items-center justify-center py-20">
-              <p className="text-sm text-slate-400">左の分析を参考に、何でも聞いてください</p>
+              <p className="text-sm text-slate-400">分析を参考に、何でも聞いてください</p>
             </div>
           )}
           {messages.map((m, i) => <Bubble key={i} msg={m} />)}
@@ -361,21 +493,21 @@ export default function StockChat() {
         </div>
 
         {/* Input bar */}
-        <div className="flex gap-3 px-4 py-3 border-t border-slate-200 shrink-0 bg-white shadow-sm">
+        <div className="flex gap-2 px-3 py-3 border-t border-slate-200 shrink-0 bg-white">
           <textarea
-            className="flex-1 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-4 py-2.5 text-sm resize-none leading-relaxed focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors"
+            className="flex-1 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3 py-2 text-sm resize-none leading-relaxed focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors"
             rows={2}
-            placeholder="何でも聞いてください… (Shift+Enter で送信)"
+            placeholder="質問する… (Enter で送信、Shift+Enter で改行)"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); send(); }
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
             }}
           />
           <button
             onClick={send}
             disabled={streaming || !input.trim()}
-            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold text-sm px-5 rounded-xl transition-colors whitespace-nowrap"
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold text-sm px-4 rounded-xl transition-colors whitespace-nowrap self-end py-2"
           >
             送信 ↗
           </button>

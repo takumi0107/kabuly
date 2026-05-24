@@ -109,28 +109,33 @@ function StockCard({ swr, onRemove, onUpdate, analyzing }: { swr: StockWithRepor
       </div>
 
       {/* Footer */}
-      <div className="flex justify-between items-center px-5 py-2.5 border-t border-slate-100 bg-slate-50">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => onRemove(stock.Ticker)}
-            className="text-xs text-slate-300 hover:text-red-500 transition-colors"
-          >
-            削除
-          </button>
+      <div className="flex justify-between items-center px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
+        <div className="flex items-center gap-2">
           <button
             onClick={(e) => { e.stopPropagation(); onUpdate(stock.Ticker); }}
             disabled={analyzing}
-            className="text-xs text-slate-400 hover:text-blue-500 disabled:opacity-40 transition-colors"
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-blue-600 hover:border-blue-300 disabled:opacity-40 transition-colors shadow-sm"
           >
-            {analyzing ? "分析中…" : "↻ 更新"}
+            {analyzing
+              ? <svg className="animate-spin h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+              : <span className="text-base leading-none">↻</span>
+            }
+            {analyzing ? "分析中…" : "更新"}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemove(stock.Ticker); }}
+            className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 px-2.5 py-1.5 rounded-lg hover:bg-red-50 border border-transparent hover:border-red-100 transition-colors"
+          >
+            <span className="text-sm leading-none">🗑</span>
+            削除
           </button>
         </div>
         <Link
           to={`/stock/${stock.Ticker}`}
-          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600 transition-colors"
+          className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-blue-600 transition-colors"
           onClick={(e) => e.stopPropagation()}
         >
-          💬 AIに聞く →
+          💬 チャット →
         </Link>
       </div>
     </div>
@@ -325,7 +330,7 @@ function InsightCard({ insight, onRefresh, refreshing }: {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-export default function Dashboard() {
+export default function Dashboard({ userName }: { userName?: string }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -403,6 +408,13 @@ export default function Dashboard() {
     }
   }
 
+  async function handleUpdateAll() {
+    try {
+      const { tickers } = await api.runAllPipeline();
+      if (tickers?.length) setAnalyzingTickers((prev) => new Set([...prev, ...tickers]));
+    } catch { /* ignore */ }
+  }
+
   if (loading)
     return <div className="flex items-center justify-center h-screen text-slate-400 text-sm">読み込み中…</div>;
 
@@ -411,9 +423,20 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-5xl mx-auto px-5 py-3.5 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
           <span className="font-bold tracking-tight text-slate-900">Kabuly</span>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleUpdateAll}
+              disabled={analyzingTickers.size > 0}
+              className="flex items-center gap-1.5 border border-slate-200 bg-white hover:border-blue-300 hover:text-blue-600 text-slate-500 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 shadow-sm"
+              title="全ての銘柄を一括更新"
+            >
+              {analyzingTickers.size > 0
+                ? <><svg className="animate-spin h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> 分析中…</>
+                : <>↻ 全て更新</>
+              }
+            </button>
             <button
               onClick={() => setShowAdd(true)}
               className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
@@ -423,6 +446,15 @@ export default function Dashboard() {
             <Link to="/profile" className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1.5 transition-colors">
               ⚙ 設定
             </Link>
+            {userName && (
+              <a
+                href="/auth/logout"
+                className="text-xs text-slate-400 hover:text-red-500 transition-colors"
+                title={userName}
+              >
+                ログアウト
+              </a>
+            )}
           </div>
         </div>
       </header>
@@ -443,7 +475,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <main className="max-w-5xl mx-auto px-5 py-8 space-y-10">
+      <main className="max-w-5xl mx-auto px-4 py-6 space-y-8 md:px-5 md:py-8 md:space-y-10">
         <section>
           <SectionHeader label="保有銘柄" count={holdings.length} />
           {holdings.length === 0 ? (

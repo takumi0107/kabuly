@@ -57,32 +57,42 @@ func main() {
 		log.Printf("uv found at %s", uvPath)
 	}
 
+	// auth is a shorthand to wrap any API handler with session auth.
+	auth := handlers.RequireAuth
+
+	// ── Google OAuth (public — no auth needed) ──────────
+	mux.HandleFunc("GET /auth/login", handlers.GoogleLogin())
+	mux.HandleFunc("GET /auth/callback", handlers.GoogleCallback())
+	mux.HandleFunc("POST /auth/logout", handlers.Logout())
+	mux.HandleFunc("GET /auth/me", handlers.AuthMe())
+
 	// ── Stock APIs ──────────────────────────────────────
-	mux.HandleFunc("GET /api/stocks", handlers.GetStocks(database))
-	mux.HandleFunc("POST /api/stocks", handlers.AddStock(database, pipelineDir, uvPath))
-	mux.HandleFunc("DELETE /api/stocks/{ticker}", handlers.RemoveStock(database))
+	mux.HandleFunc("GET /api/stocks", auth(handlers.GetStocks(database)))
+	mux.HandleFunc("POST /api/stocks", auth(handlers.AddStock(database, pipelineDir, uvPath)))
+	mux.HandleFunc("DELETE /api/stocks/{ticker}", auth(handlers.RemoveStock(database)))
 
 	// ── Stock search & chart (Yahoo Finance proxy) ─────
-	mux.HandleFunc("GET /api/search", handlers.SearchStocks(database))
-	mux.HandleFunc("GET /api/chart/{ticker}", handlers.GetChartData(database))
+	mux.HandleFunc("GET /api/search", auth(handlers.SearchStocks(database)))
+	mux.HandleFunc("GET /api/chart/{ticker}", auth(handlers.GetChartData(database)))
 
 	// ── Dashboard (all data in one call) ────────────────
-	mux.HandleFunc("GET /api/dashboard", handlers.GetDashboard(database))
+	mux.HandleFunc("GET /api/dashboard", auth(handlers.GetDashboard(database)))
 
 	// ── Stock detail page data ──────────────────────────
-	mux.HandleFunc("GET /api/stock/{ticker}", handlers.GetStockDetail(database))
+	mux.HandleFunc("GET /api/stock/{ticker}", auth(handlers.GetStockDetail(database)))
 
 	// ── Profile ─────────────────────────────────────────
-	mux.HandleFunc("GET /api/profile", handlers.GetProfile(database))
-	mux.HandleFunc("POST /api/profile", handlers.SaveProfile(database))
+	mux.HandleFunc("GET /api/profile", auth(handlers.GetProfile(database)))
+	mux.HandleFunc("POST /api/profile", auth(handlers.SaveProfile(database)))
 
-	// ── Pipeline status & manual run ────────────────────
-	mux.HandleFunc("GET /api/pipeline/status", handlers.GetPipelineStatus(database))
-	mux.HandleFunc("POST /api/pipeline/run/{ticker}", handlers.RunPipeline(database, pipelineDir, uvPath))
-	mux.HandleFunc("POST /api/insight/refresh", handlers.RefreshInsight(database, pipelineDir, uvPath))
+	// ── Pipeline status & manual/bulk run ───────────────
+	mux.HandleFunc("GET /api/pipeline/status", auth(handlers.GetPipelineStatus(database)))
+	mux.HandleFunc("POST /api/pipeline/run/all", auth(handlers.RunAllPipeline(database, pipelineDir, uvPath)))
+	mux.HandleFunc("POST /api/pipeline/run/{ticker}", auth(handlers.RunPipeline(database, pipelineDir, uvPath)))
+	mux.HandleFunc("POST /api/insight/refresh", auth(handlers.RefreshInsight(database, pipelineDir, uvPath)))
 
 	// ── Chat (SSE streaming) ────────────────────────────
-	mux.HandleFunc("POST /api/chat/{ticker}", handlers.StockChat(database))
+	mux.HandleFunc("POST /api/chat/{ticker}", auth(handlers.StockChat(database)))
 
 	// ── LINE Webhook ────────────────────────────────────
 	mux.HandleFunc("POST /webhook/line", handlers.LineWebhook(database))

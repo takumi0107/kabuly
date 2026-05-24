@@ -112,6 +112,8 @@ def run_analysis(tickers: Optional[list] = None, notify: bool = True) -> None:
             "volatility_30d": pat.get("volatility_30d"),
             "above_ma200": 1 if pat.get("above_ma200") else 0,
             "trend_20d": pat.get("trend_20d"),
+            "per": stock_data.get("per"),
+            "pbr": stock_data.get("pbr"),
         }
         db.upsert_daily_report(report_row)
 

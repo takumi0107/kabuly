@@ -9,6 +9,7 @@ export default defineConfig({
     proxy: {
       // Forward all /api and /webhook requests to the Go server in dev
       "/api": "http://localhost:8080",
+      "/auth": "http://localhost:8080",
       "/webhook": "http://localhost:8080",
     },
   },

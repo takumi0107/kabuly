@@ -52,11 +52,11 @@ def analyze_stock(stock_data: dict, news: list[dict], profile: dict) -> dict:
     ma200     = stock_data.get("ma200") or 0.0
     high_52w  = p.get("high_52w") or 0.0
 
-    # Pre-compute anchor suggestions so Claude has concrete numbers to reason from.
-    suggested_stop  = round(price - 2 * atr, 0) if atr else None
+    # Pre-compute anchor suggestions — keep decimal precision so Claude doesn't round further.
+    suggested_stop  = round(price - 2 * atr, 1) if atr else None
     # Nearest resistance above price: prefer MA20 > MA50 > MA200 > 52w high
     resistances = [r for r in [ma20, ma50, ma200, high_52w] if r > price]
-    suggested_target = round(min(resistances), 0) if resistances else round(price * 1.05, 0)
+    suggested_target = round(min(resistances), 1) if resistances else round(price * 1.05, 1)
 
     prompt = f"""Analyze and output a JSON investment signal. Reply with ONLY valid JSON, no markdown.
 
@@ -78,21 +78,21 @@ Recent news:
 
 Investor style: {profile['style']}
 
-Anchors for target_price / stop_loss (adjust based on your analysis — do not use blindly):
-- Suggested stop_loss: price − 2×ATR = {fmt(suggested_stop, 0)} (tighten or widen based on support levels)
-- Suggested target_price: nearest resistance = {fmt(suggested_target, 0)} (use next key level above price)
-- stop_loss must be below current price; target_price must be above current price
+Anchors for target_price / stop_loss:
+- stop_loss anchor: price − 2×ATR = {fmt(suggested_stop, 1)} → set to the exact support/MA level nearest to this value
+- target_price anchor: nearest resistance above price = {fmt(suggested_target, 1)} → set to this exact value
+- Output exact decimal values as-is (e.g. 2848.3, 2675.5). Do NOT round to the nearest 50 or 100.
+- stop_loss must be strictly below current price; target_price must be strictly above current price
 
 {{"signal":"買い"or"様子見"or"売り","confidence":1-5,"reason":"4-5 sentences in Japanese","target_price":number,"stop_loss":number,"time_horizon":"短期(1-2週)"or"中期(1-3ヶ月)"or"長期(3ヶ月以上)","key_risks":["risk1","risk2"],"business_summary_ja":"2-3 sentences in Japanese"}}"""
 
     message = client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=4000,
-        thinking={"type": "enabled", "budget_tokens": 2000},
+        max_tokens=1200,
         messages=[{"role": "user", "content": prompt}]
     )
 
-    raw_text = next((b.text for b in message.content if b.type == "text"), "")
+    raw_text = message.content[0].text
     result = _extract_json(raw_text)
 
     return result
